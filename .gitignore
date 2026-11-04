@@ -1,0 +1,16 @@
+# Build output and caches
+build/
+apm_modules/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+
+# Generated per-harness install output (not committed)
+.agents/
+.claude/
+.grok/
+.kiro/
+.cursor/

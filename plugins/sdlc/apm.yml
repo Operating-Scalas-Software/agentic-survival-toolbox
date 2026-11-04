@@ -1,0 +1,8 @@
+name: sdlc
+version: 0.1.0
+description: >-
+  SDLC agent skills: pull-request review follow-up, Architecture Decision Record
+  authoring and validation, and agent-skill self-evaluation.
+author: agentic-survival-toolbox
+license: Apache-2.0
+includes: auto
