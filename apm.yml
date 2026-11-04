@@ -1,0 +1,17 @@
+name: agentic-survival-toolbox
+version: 0.1.0
+description: A public marketplace of reusable agent skills and Copilot plugins.
+author: agentic-survival-toolbox
+license: Apache-2.0
+marketplace:
+  owner:
+    name: agentic-survival-toolbox
+  outputs:
+    claude: {}
+    copilot: {}
+  build:
+    tagPattern: "v{version}"
+  packages:
+    - name: sdlc
+      source: ./plugins/sdlc
+      version: 0.1.0

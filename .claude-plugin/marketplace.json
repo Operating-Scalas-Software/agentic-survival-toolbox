@@ -1,0 +1,14 @@
+{
+  "name": "agentic-survival-toolbox",
+  "owner": {
+    "name": "agentic-survival-toolbox"
+  },
+  "plugins": [
+    {
+      "name": "sdlc",
+      "description": "SDLC agent skills: pull-request review follow-up, Architecture Decision Record authoring and validation, and agent-skill self-evaluation.",
+      "version": "0.1.0",
+      "source": "./plugins/sdlc"
+    }
+  ]
+}
