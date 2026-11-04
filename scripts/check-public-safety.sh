@@ -4,17 +4,24 @@ set -euo pipefail
 # Public-safety guard for a public repository.
 #
 # Scans every file Git tracks (plus untracked, non-ignored files) for strings
-# that must never be committed here: internal project names, AWS account IDs and
-# ARNs, access-key IDs, and private-key blocks.
+# that must never be committed here: internal project/org identifiers, email
+# addresses, AWS account IDs and ARNs, access-key IDs, and private-key blocks.
 #
-# The patterns below are assembled from fragments so this script does not itself
-# contain the literal internal strings it is meant to catch.
+# The internal identifiers are decoded from hex at runtime so their readable form
+# never appears in this public file. AWS account IDs are matched generically as
+# standalone 12-digit numbers (word-bounded) rather than listed, which is broad
+# by design: a bare 12-digit number in prose is blocked and must be reworded.
 
-proj_a="zoo"       # + "rl" -> internal project codename (never write it out)
-org_a="Operating"  # + "Scalas" -> organization name (never write it out)
-org_b="Scalas"
+id1=$(printf '\x7a\x6f\x6f\x72\x6c')      # internal project codename
+id2=$(printf '\x73\x63\x61\x6c\x61\x73')  # internal organization token
 
-pattern="(${proj_a}rl|${org_a}[-_. ]*${org_b}|[0-9]{12}|AKIA[0-9A-Z]{16}|arn:aws:[a-z0-9-]+:[a-z0-9-]+:[0-9]{12}|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----)"
+email='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+acct='[0-9]{12}'
+access_key='AKIA[0-9A-Z]{16}'
+arn='arn:aws:[a-z0-9-]+:[a-z0-9-]+:[0-9]{12}'
+key_block='-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'
+
+pattern="(${id1}|${id2}|${email}|\b${acct}\b|\b${access_key}\b|${arn}\b|${key_block})"
 
 fails=0
 while IFS= read -r -d '' f; do

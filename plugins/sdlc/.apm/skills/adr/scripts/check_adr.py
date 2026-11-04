@@ -220,8 +220,8 @@ def check_file(path: Path, numbers: dict[int, list[str]]) -> dict:
     if not options:
         errors.append("Considered Options has no list item")
     for option in options:
-        key = normalize(re.sub(r"[`\"']", "", option))[:40]
-        if not any(key.split(":")[0][:25] in heading for heading in pros_headings):
+        name = normalize(re.sub(r"[`\"']", "", option)).split(":")[0].rstrip(".").strip()
+        if name not in pros_headings:
             warnings.append(f"option has no Pros and Cons subsection: {option[:60]!r}")
 
     if normalize(str(status)) == "superseded" and not re.search(

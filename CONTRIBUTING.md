@@ -13,9 +13,11 @@ first rule is: never commit private or internal content.
 
 ## What we do not accept
 
-- Anything referencing internal projects, accounts, credentials, ARNs, private
-  URLs, or email addresses. A CI guard (`scripts/check-public-safety.sh`) blocks
-  these.
+- Anything referencing internal projects, accounts, credentials, ARNs, access
+  keys, private keys, or email addresses. A CI guard
+  (`scripts/check-public-safety.sh`) blocks these. Note the 12-digit account-ID
+  rule is generic: a standalone 12-digit number in prose is treated as an
+  account ID and blocked until reworded.
 - Content that circumvents security or Responsible AI policies, or that weakens
   a platform's security.
 - Duplicate primitives that add no value over what a frontier model already does.

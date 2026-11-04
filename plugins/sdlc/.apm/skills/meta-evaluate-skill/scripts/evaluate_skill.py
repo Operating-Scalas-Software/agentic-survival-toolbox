@@ -15,6 +15,8 @@ Usage:
 The judge file is a JSON object with a "dimensions" object, one entry per
 rubric dimension, each with "score" (0-100), "evidence" and "justification".
 Exit codes: 0 report written, 1 score below --fail-under, 2 invalid input.
+Scoring: total = 0.4 * deterministic + 0.6 * judge (see DIMENSION_WEIGHTS);
+bands are >=90 excellent, >=75 good, >=60 needs-work, else poor.
 """
 
 from __future__ import annotations
@@ -95,6 +97,22 @@ def ok(check_id: str, category: str, weight: float, detail: str) -> Check:
 def die(message: str) -> NoReturn:
     print(f"error: {message}", file=sys.stderr)
     raise SystemExit(2)
+
+
+_FENCE_INFO = re.compile(r"[A-Za-z0-9_+.-]{1,32}")
+
+
+def _is_fence(line: str) -> bool:
+    """True when `line` is a markdown fence delimiter, optionally with an info string."""
+    s = line.strip()
+    if not (s.startswith("```") or s.startswith("~~~")):
+        return False
+    marker = s[0]
+    run = len(s) - len(s.lstrip(marker))
+    if run < 3:
+        return False
+    rest = s[run:].strip()
+    return rest == "" or bool(_FENCE_INFO.fullmatch(rest))
 
 
 def skill_dir(path: Path) -> Path:
@@ -320,7 +338,7 @@ def run_checks(base: Path) -> tuple[list[Check], dict]:
     else:
         checks.append(warn("structure.duplicate_headings", "structure", 1, "duplicate H2 headings"))
 
-    fences = sum(1 for line in body.splitlines() if line.strip().startswith(("```", "~~~")))
+    fences = sum(1 for line in body.splitlines() if _is_fence(line))
     if fences % 2 == 0:
         checks.append(ok("structure.code_fences", "structure", 2, f"{fences} fences"))
     else:
@@ -404,7 +422,10 @@ def load_judge(path: Path) -> list[dict]:
     result = []
     for name in JUDGE_DIMENSIONS:
         item = dimensions[name]
-        score = float(item["score"])
+        try:
+            score = float(item["score"])
+        except (TypeError, ValueError):
+            die(f"dimension '{name}' score must be a number")
         if not 0 <= score <= 100:
             die(f"dimension '{name}' score must be 0-100")
         result.append(

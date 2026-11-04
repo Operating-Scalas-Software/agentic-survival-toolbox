@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
@@ -21,6 +25,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install APM (pinned)
+        # Version-pinned only: `--require-hashes` would require pinning the full
+        # transitive wheel closure (~60 wheels, many platform-specific), so the
+        # version pin is the supply-chain control for this dependency.
         run: pip install apm-cli==0.35.0
 
       - name: Marketplace check

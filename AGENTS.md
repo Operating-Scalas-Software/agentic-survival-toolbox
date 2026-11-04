@@ -19,7 +19,7 @@ scripts/check-public-safety.sh # blocking leak scan
 ## Rules
 
 - **Public safety first.** Never write internal project names, AWS account IDs,
-  ARNs, access keys, private URLs, or email addresses. Refer to a host or
+  ARNs, access keys, private keys, or email addresses. Refer to a host or
   organization with a placeholder such as `<owner>`.
 - **License.** New files are Apache-2.0. Do not add a copyright header naming an
   organization or person.

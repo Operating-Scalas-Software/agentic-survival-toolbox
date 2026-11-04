@@ -11,7 +11,7 @@ set -euo pipefail
 pr=${1:-$(gh pr view --json number --jq .number)}
 owner=$(gh repo view --json owner --jq .owner.login)
 repo=$(gh repo view --json name --jq .name)
-out="${TMPDIR:-/tmp}/pr-review-${pr}.json"
+out=$(mktemp "${TMPDIR:-/tmp}/pr-review-XXXXXX.json")
 
 gh api graphql -f query='
 query($owner:String!,$repo:String!,$pr:Int!){
@@ -19,22 +19,29 @@ query($owner:String!,$repo:String!,$pr:Int!){
     pullRequest(number:$pr){
       number title state headRefName
       reviewThreads(first:100){
+        pageInfo { hasNextPage }
         nodes{
           id isResolved isOutdated path line
           comments(first:50){ nodes{ author{login} body createdAt } }
         }
       }
-      reviews(first:50){ nodes{ author{login} state body } }
-      comments(first:50){ nodes{ author{login} body } }
+      reviews(first:50){ pageInfo { hasNextPage } nodes{ author{login} state body } }
+      comments(first:50){ pageInfo { hasNextPage } nodes{ author{login} body } }
     }
   }
 }' -F owner="$owner" -F repo="$repo" -F pr="$pr" >"$out"
+chmod 600 "$out"
 
 jq -r '
   def flat: gsub("\\s+"; " ") | .[0:220];
+  def truncated(what; conn):
+    if (conn.pageInfo.hasNextPage // false) then "WARNING: \(what) was truncated (first page only)" else empty end;
   .data.repository.pullRequest |
   "PR #\(.number) \(.title) [\(.state)] head=\(.headRefName)",
   "threads=\(.reviewThreads.nodes|length) unresolved=\([.reviewThreads.nodes[]|select(.isResolved==false)]|length)",
+  truncated("review threads"; .reviewThreads),
+  truncated("reviews"; .reviews),
+  truncated("comments"; .comments),
   "",
   "UNRESOLVED THREADS",
   ([.reviewThreads.nodes[] | select(.isResolved==false)

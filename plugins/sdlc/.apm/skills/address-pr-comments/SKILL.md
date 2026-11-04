@@ -49,8 +49,9 @@ bash <skill-dir>/scripts/collect-review.sh        # PR of the current branch
 bash <skill-dir>/scripts/collect-review.sh 24     # explicit PR
 ```
 
-Open the saved `/tmp/pr-review-<n>.json` only for a field the summary omits;
-re-running the script after each push is cheaper than re-reading the JSON.
+Open the JSON file named on the `raw:` line of the summary only for a field the
+summary omits; re-running the script after each push is cheaper than re-reading
+the JSON.
 
 Rules for triage scope:
 

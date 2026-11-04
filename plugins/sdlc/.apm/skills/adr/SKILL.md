@@ -191,6 +191,10 @@ The decision has these parts:
   make it reviewable, so write them first if the Good ones come too easily.
 - Keep the file short (roughly 60-120 lines). Implementation detail belongs in
   the PR that follows.
+- The "driver has no matching consequence" warning is a keyword heuristic with a
+  fixed stopword list: a driver rephrased with different words can warn on an
+  otherwise valid ADR. Treat it as a nudge, not a failure; make the driver's key
+  terms appear in a consequence if the warning is real.
 - The checker's warnings are judgement calls (question-style title, missing Bad
   entry, unmatched driver). `--fail-on-warn` turns them into failures for CI;
   locally, read them and fix what is real instead of silencing them.
