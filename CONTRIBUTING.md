@@ -56,8 +56,8 @@ docs/                          # process docs and ADRs
 - Any Python or Node script in a skill's `scripts/` must have tests.
 - Tests live under top-level `tests/`, outside the packaged `.apm/` tree, so
   they run in CI and are excluded from releases by construction.
-- Python: `tests/**/*.py`, run with `pytest`. Node: `tests/**/*.test.{js,mjs}`,
-  run with `node --test tests/`.
+- Python: `tests/**/test_*.py` and `tests/**/*_test.py`, run with `pytest`.
+  Node: `tests/**/*.test.{js,mjs}`, run with `node --test tests/`.
 
 Example: `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` is covered by
 `tests/skills/adr/test_check_adr.py`.
@@ -90,7 +90,9 @@ Semantic versioning, with the skill **description as the API**:
 - **Major** — the `description` (activation contract) changes, or a slot/asset
   name that consumers depend on is renamed.
 
-Bump the package `version` accordingly before release.
+Versions are lockstep: the root `apm.yml` `version` is the release anchor, and
+`apm pack --check-versions` enforces every package `version` matches it. Bump
+them together before release.
 
 ## AI agents
 

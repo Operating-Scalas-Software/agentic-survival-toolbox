@@ -54,12 +54,12 @@ jobs:
 
       - name: Run tests (Python/Node)
         run: |
-          set -uo pipefail
+          set -euo pipefail
           shopt -s globstar nullglob
-          py=(tests/**/*.py)
-          js=(tests/**/*.mjs tests/**/*.js)
+          py=(tests/**/test_*.py tests/**/*_test.py)
+          js=(tests/**/*.test.mjs tests/**/*.test.js)
           if (( ${#py[@]} > 0 )); then
-            pip install pytest
+            pip install pytest==9.2.0
             pytest -q tests
           fi
           if (( ${#js[@]} > 0 )); then

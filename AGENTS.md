@@ -27,7 +27,8 @@ scripts/check-public-safety.sh # blocking leak scan
   organization or person.
 - **One source of truth.** Skills live in `plugins/<pkg>/.apm/skills/`; the
   marketplace JSONs are generated and must not be hand-edited.
-- **Versioning.** Bump the package `version` per CONTRIBUTING.md before release.
+- **Versioning.** Lockstep: bump the root `apm.yml` `version` and every package
+  `version` together, per CONTRIBUTING.md.
 - **Tests.** Python/Node scripts must have tests under `tests/`; they run in CI
   and are never packaged.
 

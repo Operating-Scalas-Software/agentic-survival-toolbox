@@ -61,3 +61,5 @@ body:
         - label: "Tests added for any Python/Node scripts"
         - label: "`apm pack` regenerated marketplace JSONs committed"
         - label: "Licensed Apache-2.0 (no copyright header)"
+    validations:
+      required: true

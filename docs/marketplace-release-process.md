@@ -7,8 +7,8 @@ How `agentic-survival-toolbox` is published.
 - `main` is the source of truth; contributions land via PRs that pass CI.
 - On merge, `publish.yml` regenerates the marketplace output and pushes it to a
   dedicated `marketplace` branch (rolling "latest").
-- Versioned releases are anchored by `v*` git tags, created when the package
-  `version` changes.
+- Versioned releases are anchored by `v*` git tags, created when the
+  marketplace `version` changes.
 
 ```mermaid
 flowchart LR
@@ -31,18 +31,24 @@ flowchart LR
    `apm pack --check-versions --strict-metadata`, regenerating
    `.claude-plugin/marketplace.json` and `.github/plugin/marketplace.json`.
 3. **Marketplace branch** — the regenerated tree is committed to the
-   `marketplace` branch with an atomic push; a compare-and-swap check aborts if
-   the branch moved (no lost updates).
-4. **Tag + release** — when the package `version` changed, the workflow pushes
-   the `vX.Y.Z` tag (per `marketplace.build.tagPattern: "v{version}"`); a
-   `release.yml` on `v*` tags opens a notes-only GitHub Release.
+   `marketplace` branch and pushed; a compare-and-swap check aborts early if the
+   branch moved, and git's non-fast-forward rejection is the final guard (a race
+   fails the run rather than losing an update). When nothing changed, no commit
+   is made.
+4. **Tag + release** — when the version changed, the workflow pushes the
+   `vX.Y.Z` tag (per `marketplace.build.tagPattern: "v{version}"`) and creates
+   the notes-only GitHub Release itself. A tag pushed by the workflow uses
+   `GITHUB_TOKEN`, which does not trigger `release.yml`; that workflow still
+   opens a release for tags pushed manually.
 
 No `zip` or `sha256sum` artifacts are produced.
 
 ## How versioning works
 
 - Semver, with the skill `description` as the API — see `CONTRIBUTING.md`.
-- The tag derives from the package `version` via `tagPattern: "v{version}"`.
+- The tag derives from the marketplace (root `apm.yml`) `version` via
+  `tagPattern: "v{version}"`; `--check-versions` (lockstep) enforces every
+  package `version` matches it.
 - Consumers resolve a version from these tags:
 
 ```yaml

@@ -66,7 +66,12 @@ jobs:
           fi
 
           rsync -a --delete --exclude '.git' "$snapshot/" "$worktree/"
-          (cd "$worktree" && git add -A && git commit -m "chore: publish from main" --allow-empty)
+          (cd "$worktree" && git add -A)
+          if (cd "$worktree" && git diff --cached --quiet) && [ -n "$base" ]; then
+            echo "No changes to publish; skipping."
+            exit 0
+          fi
+          (cd "$worktree" && git commit -m "chore: publish from main" --allow-empty)
           head="$(cd "$worktree" && git rev-parse HEAD)"
 
           if [ -n "$base" ]; then
@@ -80,10 +85,14 @@ jobs:
 
           git push origin "$head:refs/heads/$BRANCH"
 
-      - name: Tag versioned release
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git fetch --tags --force origin
+          # Lockstep versioning: the root apm.yml `version` is the release
+          # anchor; `apm pack --check-versions` enforces every package matches it.
           version="$(sed -n 's/^version:[[:space:]]*//p' apm.yml | head -n1)"
           tag="v${version}"
           if git rev-parse "${tag}" >/dev/null 2>&1; then
@@ -91,4 +100,10 @@ jobs:
           else
             git tag "${tag}"
             git push origin "${tag}"
+            # Pushes made with GITHUB_TOKEN do not trigger other workflows, so
+            # release.yml will not run; create the notes-only release here.
+            gh release create "${tag}" \
+              --repo "${{ github.repository }}" \
+              --title "${tag}" \
+              --generate-notes
           fi
