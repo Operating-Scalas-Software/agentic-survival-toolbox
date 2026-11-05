@@ -6,12 +6,14 @@ Guidance for AI agents contributing to this repository.
 
 ```text
 apm.yml                        # marketplace manifest (the published catalog)
-plugins/sdlc/                  # the sdlc package + Copilot plugin
+plugins/<pkg>/                 # one package per directory
   apm.yml                      # package manifest
   plugin.json                  # Copilot Agent Plugin manifest
   .apm/skills/<name>/          # skills (SKILL.md + scripts/ + references/)
+tests/                         # unit/integration tests (never packaged)
+docs/                          # process docs and ADRs
 scripts/check-public-safety.sh # blocking leak scan
-.github/workflows/             # validate.yml
+.github/workflows/             # validate.yml, publish.yml, release.yml
 .claude-plugin/marketplace.json # generated (committed)
 .github/plugin/marketplace.json # generated (committed)
 ```
@@ -26,6 +28,20 @@ scripts/check-public-safety.sh # blocking leak scan
 - **One source of truth.** Skills live in `plugins/<pkg>/.apm/skills/`; the
   marketplace JSONs are generated and must not be hand-edited.
 - **Versioning.** Bump the package `version` per CONTRIBUTING.md before release.
+- **Tests.** Python/Node scripts must have tests under `tests/`; they run in CI
+  and are never packaged.
+
+## Contributing
+
+Follow [CONTRIBUTING.md](CONTRIBUTING.md): branch from `main`, add the skill under
+`plugins/<pkg>/.apm/skills/<name>/`, add tests under `tests/`, run the checks,
+regenerate the marketplace JSONs, and open a PR against `main`.
+
+## Release process
+
+Merging to `main` triggers `publish.yml`, which regenerates the marketplace
+output, pushes the `marketplace` branch, and tags `vX.Y.Z` when the version
+changed. See [docs/marketplace-release-process.md](docs/marketplace-release-process.md).
 
 ## Commands
 
@@ -34,6 +50,7 @@ scripts/check-public-safety.sh                              # blocking leak scan
 apm marketplace check                                       # every package resolves
 apm pack --check-versions --check-clean --dry-run           # release gates
 apm pack                                                    # regenerate marketplace JSONs
+pytest -q tests                                             # unit/integration tests
 ```
 
 After changing `apm.yml` or any skill, run `apm pack` and commit the regenerated

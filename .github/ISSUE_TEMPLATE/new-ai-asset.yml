@@ -1,0 +1,63 @@
+name: New AI asset
+description: Propose a new skill or plugin for the marketplace.
+title: "[asset] "
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Asset type
+      options: [Skill, Plugin]
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: "Existing package (e.g. `sdlc`) or a new package name."
+      placeholder: sdlc
+    validations:
+      required: true
+
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      description: kebab-case, matching the skill directory / plugin name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Activation description
+      description: Start with "Use when …" — this is the skill's API.
+      placeholder: Use when …
+    validations:
+      required: true
+
+  - type: textarea
+    id: scripts
+    attributes:
+      label: Bundled scripts
+      description: "Python/Node scripts, if any. Each requires tests under `tests/`."
+
+  - type: dropdown
+    id: bump
+    attributes:
+      label: Version impact
+      description: Semantic-version impact, per CONTRIBUTING.md.
+      options: [patch, minor, major]
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: "Passes `scripts/check-public-safety.sh`"
+        - label: "Passes `apm marketplace check` and `apm pack --check-versions --check-clean --dry-run`"
+        - label: "Tests added for any Python/Node scripts"
+        - label: "`apm pack` regenerated marketplace JSONs committed"
+        - label: "Licensed Apache-2.0 (no copyright header)"
