@@ -104,7 +104,8 @@ dependencies:
 ## Consumers
 
 - APM: `apm marketplace add <owner>/agentic-survival-toolbox`
-- Copilot CLI: `gh copilot marketplace add <owner>/agentic-survival-toolbox`
+- Copilot CLI: `copilot plugin marketplace add <owner>/agentic-survival-toolbox`,
+  then `copilot plugin install sdlc@agentic-survival-toolbox`
 
 ## References
 
