@@ -44,7 +44,8 @@ flowchart LR
    is keyed on the tag, not on the push, so it converges: if `gh release create`
    failed after the tag push, or the release was deleted to regenerate its
    notes, the next `publish.yml` run creates it. A tag pushed by hand gets its
-   release the same way on the next merge, or immediately with:
+   release on the next merge that sets `apm.yml` `version` to that tag, or
+   immediately with:
 
    ```bash
    gh release create vX.Y.Z \
@@ -66,7 +67,8 @@ Making that workflow the sole owner instead would need either `actions: write`
 granted to `publish.yml` for a `workflow_dispatch` handoff, or a long-lived
 token or App credential so the tag push cascades. Both trade a single run that
 owns the whole flow for a second, asynchronous failure surface, plus a secret to
-rotate in the token case. See #7 for the decision.
+rotate in the token case. Decided in #7; recorded in
+[ADR-0001](adr/0001-publish-workflow-owns-releases.md).
 
 ## How versioning works
 
@@ -103,7 +105,8 @@ dependencies:
 ## Consumers
 
 - APM: `apm marketplace add <owner>/agentic-survival-toolbox`
-- Copilot CLI: `gh copilot marketplace add <owner>/agentic-survival-toolbox`
+- Copilot CLI: `copilot plugin marketplace add <owner>/agentic-survival-toolbox`,
+  then `copilot plugin install sdlc@agentic-survival-toolbox`
 
 ## References
 

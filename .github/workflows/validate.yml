@@ -37,11 +37,22 @@ jobs:
         run: apm pack --check-versions --check-clean --dry-run
 
       - name: Skill audit
+        # Matches CONTRIBUTING.md: audit every package's skills, not just one.
+        # `mapfile` plus the count guard keeps a silent zero-match - or a failing
+        # `find`, whose status process substitution discards - from passing.
         run: |
-          for f in plugins/sdlc/.apm/skills/*/SKILL.md; do
+          set -euo pipefail
+          mapfile -t files < <(find plugins -path '*/.apm/skills/*/SKILL.md' -print | sort)
+          (( ${#files[@]} > 0 )) || { echo "no skills found to audit" >&2; exit 1; }
+          for f in "${files[@]}"; do
             echo "auditing ${f}"
             apm audit --file "${f}"
           done
+
+      - name: No separate release workflow
+        # ADR-0001: publish.yml owns the tag and the release, so a second owner
+        # is the regression this guards against.
+        run: test ! -e .github/workflows/release.yml
 
   tests:
     runs-on: ubuntu-26.04
@@ -59,7 +70,9 @@ jobs:
           py=(tests/**/test_*.py tests/**/*_test.py)
           js=(tests/**/*.test.mjs tests/**/*.test.js)
           if (( ${#py[@]} > 0 )); then
-            pip install pytest==9.2.0
+            # pyyaml: imported by the skill scripts the tests load; keep in step
+            # with the `dependencies` blocks in those scripts (PEP 723).
+            pip install pytest==9.2.0 pyyaml==6.0.3
             pytest -q tests
           fi
           if (( ${#js[@]} > 0 )); then

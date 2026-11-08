@@ -16,7 +16,8 @@ plugins/<pkg>/                 # one package per directory
   README.md                    # consumer-facing package docs
   .apm/skills/<name>/          # skills: SKILL.md + scripts/, references/, assets/
 tests/                         # unit/integration tests (never packaged)
-docs/                          # process docs and ADRs
+docs/*.md                      # process docs
+docs/adr/NNNN-*.md             # Architecture Decision Records
 ```
 
 ## What we accept
@@ -53,16 +54,20 @@ docs/                          # process docs and ADRs
 
 ## Tests
 
-- Any Python or Node script in a skill's `scripts/` must have tests.
+- Any Python or Node script must have tests; add them with the script itself.
 - Tests live under top-level `tests/`, outside the packaged `.apm/` tree, so
   they run in CI and are excluded from releases by construction.
+- Mirror the source path: `scripts/runner_image_watch.py` is covered by
+  `tests/scripts/test_runner_image_watch.py`, and
+  `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` by
+  `tests/skills/adr/test_check_adr.py`.
+- Skill scripts import `pyyaml`, which the command below installs with the
+  versions pinned in `.github/workflows/validate.yml`.
 - Python: `tests/**/test_*.py` and `tests/**/*_test.py`, run with `pytest`.
   Node: `tests/**/*.test.{js,mjs}`, run with `node --test tests/`.
 
-Example: `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` is covered by
-`tests/skills/adr/test_check_adr.py`.
-
 ```bash
+pip install pytest pyyaml   # pyyaml: imported by the skill scripts the tests load
 pytest -q tests
 node --test tests/
 ```
