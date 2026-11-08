@@ -64,6 +64,10 @@ The decision has these parts:
 - Bad, because tagging depends on the `GITHUB_TOKEN` write permission alone,
   with no token or App credential to fall back on if that permission is lost.
 
+[ADR-0002](0002-publish-per-package-release-tags.md) adds a per-package
+`{package}--v{version}` tag to each release; the owner, the idempotent tag step
+and the notes-only release are unchanged.
+
 ### Confirmation
 
 - `publish.yml` fails when `apm pack --check-versions` reports a version
