@@ -96,7 +96,15 @@ rotate in the token case. Decided in #7; recorded in
   the `{package}--v{version}` tags, so it keeps working across patch and minor
   releases. Releases published before the alias tags existed can be backfilled
   once with `python3 scripts/release_tags.py --backfill` (add `--apply` to
-  create the tags, then push them).
+  create the tags, then push them). That backfill is the one deliberate case
+  where a tag is pushed by hand rather than by `publish.yml`, which is why it is
+  a documented one-off instead of part of the release flow.
+
+A diverged alias tag shows up as `<alias> points at abc1234, but vX.Y.Z points
+at def5678` from the `--check` step. The repair is to delete the alias tag and
+re-run the release: `git push --delete origin <alias>`, then rerun `publish.yml`
+(or merge a new release). The workflow only creates tags that do not exist, so
+re-pushing the release will restore it at the right commit.
 
 ```yaml
 dependencies:

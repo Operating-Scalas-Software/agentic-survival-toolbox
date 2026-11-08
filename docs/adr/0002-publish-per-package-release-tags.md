@@ -87,11 +87,12 @@ The decision has these parts:
   reverting the workflow commit, with no effect on existing consumers.
 - Bad, because two tag families must stay in step; `--check` covers the commit
   mismatch, but the convention itself is external and could change upstream.
-- Bad, because the tag namespace is now shared with package names, so a future
-  package name that collides with an existing tag pattern needs attention
-  (`marketplace.packages[].tag_pattern` exists for that case).
+- Bad, because the tag namespace is now shared with package names: a package
+  name that cannot form a git tag fails the release gates, so supporting one
+  would mean extending `release_tags.py` before the package can ship.
 - Bad, because old releases only gain alias tags through a manual `--backfill`
-  run; until it happens, an exact pin to `0.1.0` or `0.1.1` cannot resolve.
+  run followed by a hand-pushed tag; until it happens, an exact pin to `0.1.0`
+  or `0.1.1` cannot resolve.
 
 ### Confirmation
 
@@ -103,6 +104,10 @@ The decision has these parts:
   in `.agents/skills/`, which is the exact symptom of the missing alias tag.
 - `tests/scripts/test_release_tags.py` covers derivation, lockstep mismatch,
   tag-safety, divergence, and backfill against a temporary git repository.
+- A diverged alias tag fails `--check` with the two commits it compared; the
+  repair is to delete the tag and re-push it at the release commit
+  (`git push --delete origin <tag>`, then re-run the release), because the
+  workflow only creates tags that do not exist.
 
 ## Pros and Cons of the Options
 
@@ -142,4 +147,6 @@ The decision has these parts:
 - Related: [release process](../marketplace-release-process.md),
   [ADR-0001](0001-publish-workflow-owns-releases.md), [CONTRIBUTING.md](../../CONTRIBUTING.md).
 - Reconsider when apm-cli emits a tag pattern for local package sources, or
-  when the marketplace gains a package whose name cannot form a git tag.
+  when the marketplace needs a package name that is not a valid git tag
+  component - today that is a hard failure in the release gates, not a
+  fallback.

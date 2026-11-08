@@ -18,6 +18,7 @@ Usage:
     python3 scripts/release_tags.py --plan        # tags for the current version
     python3 scripts/release_tags.py --check       # both families agree
     python3 scripts/release_tags.py --version     # current manifest version
+    python3 scripts/release_tags.py --sources     # name<TAB>path per package
     python3 scripts/release_tags.py --backfill    # alias tags for old v* tags
     python3 scripts/release_tags.py --backfill --apply
 
@@ -38,11 +39,16 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "apm.yml"
 
-# Keep in step with `marketplace.build.tagPattern` in apm.yml.
+# Keep in step with `marketplace.build.tagPattern` in apm.yml; `validate_tag_pattern`
+# fails closed when the two disagree instead of silently publishing nothing.
 RELEASE_PREFIX = "v"
+RELEASE_VERSION = f"{RELEASE_PREFIX}{{version}}"
 ALIAS_TEMPLATE = "{name}--v{version}"
 
-SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+# The release flow publishes plain `X.Y.Z` versions (CONTRIBUTING.md), and APM's
+# range matcher has not been shown to resolve a prerelease or build alias, so a
+# version outside that shape is an error rather than a tag nobody can install.
+SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 # `name` is a git tag component: APM restricts it to this set, so the alias tag
 # is safe by construction. Anything else is a manifest error, not something to
 # sanitize silently.
@@ -59,6 +65,13 @@ def die(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
+def as_mapping(data: object, source: str) -> dict:
+    """Reject a YAML document that is not a mapping, with a usable message."""
+    if not isinstance(data, dict):
+        raise ReleaseTagError(f"{source} is not a YAML mapping")
+    return data
+
+
 def load_manifest(path: Path) -> dict:
     try:
         data = yaml.safe_load(path.read_text())
@@ -66,15 +79,27 @@ def load_manifest(path: Path) -> dict:
         raise ReleaseTagError(f"cannot read {path}: {error}") from error
     except yaml.YAMLError as error:
         raise ReleaseTagError(f"invalid YAML in {path}: {error}") from error
-    if not isinstance(data, dict):
-        raise ReleaseTagError(f"{path} is not a YAML mapping")
-    return data
+    return as_mapping(data, str(path))
+
+
+def validate_tag_pattern(manifest: dict) -> None:
+    """Fail when apm.yml's tag pattern and the tags this script emits disagree."""
+    marketplace = manifest.get("marketplace")
+    build = marketplace.get("build") if isinstance(marketplace, dict) else None
+    default = RELEASE_VERSION
+    pattern = build.get("tagPattern", default) if isinstance(build, dict) else default
+    if pattern != RELEASE_VERSION:
+        raise ReleaseTagError(
+            f"marketplace.build.tagPattern is {pattern!r} but release_tags.py publishes "
+            f"{RELEASE_VERSION!r}; change both in one commit"
+        )
 
 
 def manifest_version(manifest: dict) -> str:
+    as_mapping(manifest, "manifest")
     version = manifest.get("version")
     if not isinstance(version, str) or not SEMVER.match(version):
-        raise ReleaseTagError(f"version {version!r} is not a semver string")
+        raise ReleaseTagError(f"version {version!r} is not a plain X.Y.Z semver string")
     return version
 
 
@@ -127,12 +152,22 @@ def alias_tag(name: str, version: str) -> str:
 
 def plan_tags(manifest: dict, manifest_path: Path = DEFAULT_MANIFEST) -> list[str]:
     """Tags for the current version, release anchor first."""
+    validate_tag_pattern(manifest)
     version = manifest_version(manifest)
     tags = [release_tag(version)]
     for entry in package_entries(manifest):
         package_version(version, entry, manifest_path)
         tags.append(alias_tag(entry["name"], version))
     return tags
+
+
+def source_list(manifest: dict) -> list[tuple[str, str]]:
+    """`(name, local path)` for every package published from this repository."""
+    sources = []
+    for entry in package_entries(manifest):
+        path = packaged_manifest_path(entry)
+        sources.append((entry["name"], path.rsplit("/", 1)[0]))
+    return sources
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -180,7 +215,7 @@ def release_tags(cwd: Path) -> list[str]:
     return sorted(line for line in out.splitlines() if RELEASE_TAG.match(line))
 
 
-def packaged_manifest_path(entry: dict, manifest_path: Path) -> str:
+def packaged_manifest_path(entry: dict) -> str:
     """Repo-relative path of a package's apm.yml for a local source."""
     source = entry["source"]
     if not source.startswith("./"):
@@ -211,10 +246,10 @@ def backfill_plan(manifest: dict, manifest_path: Path, cwd: Path) -> list[tuple[
             alias = alias_tag(entry["name"], version)
             if resolve(alias, cwd) is not None:
                 continue
-            path = packaged_manifest_path(entry, manifest_path)
+            path = packaged_manifest_path(entry)
             try:
                 text = git("show", f"{tag}:{path}", cwd=cwd)
-                declared = manifest_version(yaml.safe_load(text))
+                declared = manifest_version(as_mapping(yaml.safe_load(text), f"{tag}:{path}"))
             except (ReleaseTagError, yaml.YAMLError) as error:
                 print(f"skip {alias}: {error}", file=sys.stderr)
                 continue
@@ -233,22 +268,36 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--repo",
+        type=Path,
+        default=None,
+        help="repository to read tags from (default: the manifest's directory)",
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true", help="print the tags for this version")
     mode.add_argument("--check", action="store_true", help="verify the published tag set")
     mode.add_argument("--version", action="store_true", help="print the manifest version")
     mode.add_argument(
+        "--sources", action="store_true", help="print name<TAB>path for each local package"
+    )
+    mode.add_argument(
         "--backfill", action="store_true", help="list alias tags missing for old releases"
     )
     parser.add_argument(
-        "--apply", action="store_true", help="create planned backfill tags locally"
+        "--apply", action="store_true", help="create the planned backfill tags locally"
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.apply and not args.backfill:
+        parser.error("--apply only makes sense with --backfill")
+    # Tie the two defaults together: a `--manifest` from another checkout must
+    # never be checked against this process's working directory.
+    repo = args.repo or args.manifest.resolve().parent
     try:
         manifest = load_manifest(args.manifest)
         if args.version:
@@ -258,18 +307,22 @@ def main(argv: list[str] | None = None) -> int:
             for tag in plan_tags(manifest, args.manifest):
                 print(tag)
             return 0
+        if args.sources:
+            for name, path in source_list(manifest):
+                print(f"{name}\t{path}")
+            return 0
         if args.check:
-            errors = check_tags(plan_tags(manifest, args.manifest), args.repo)
+            errors = check_tags(plan_tags(manifest, args.manifest), repo)
             for error in errors:
                 print(f"error: {error}", file=sys.stderr)
             return 1 if errors else 0
-        planned = backfill_plan(manifest, args.manifest, args.repo)
+        planned = backfill_plan(manifest, args.manifest, repo)
         if not planned:
             print("no missing alias tags")
             return 0
         for alias, commit in planned:
             if args.apply:
-                git("tag", alias, commit, cwd=args.repo)
+                git("tag", alias, commit, cwd=repo)
                 print(f"created {alias} at {commit[:7]} (push with: git push origin {alias})")
             else:
                 print(f"git tag {alias} {commit[:7]}")
