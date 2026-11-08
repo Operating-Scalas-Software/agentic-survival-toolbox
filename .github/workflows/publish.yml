@@ -29,6 +29,11 @@ jobs:
       - name: Install APM (pinned)
         run: pip install apm-cli==0.35.0
 
+      - name: Install script dependencies
+        # Pinned explicitly rather than inherited from apm-cli's requirements;
+        # matches the pin in validate.yml.
+        run: pip install pyyaml==6.0.3
+
       - name: Marketplace check
         run: apm marketplace check
 
@@ -86,27 +91,90 @@ jobs:
           git push origin "$head:refs/heads/$BRANCH"
 
       - name: Tag and release
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          # Two tags per release, both from this commit: `v{version}` anchors the
+          # release, `{package}--v{version}` is what `apm install` resolves a
+          # marketplace version against (ADR-0002). Lockstep versioning: the
+          # root apm.yml `version` is the anchor and `apm pack --check-versions`
+          # enforces every package matches it.
+          plan="$(python3 scripts/release_tags.py --plan)"
+          mapfile -t tags <<< "${plan}"
+          (( ${#tags[@]} > 1 )) || { echo "no tag plan" >&2; exit 1; }
+          # Tag creation is idempotent, so a rerun converges instead of failing
+          # on the tags a previous run already pushed.
+          for tag in "${tags[@]}"; do
+            if git rev-parse "${tag}" >/dev/null 2>&1; then
+              echo "Tag ${tag} already exists; skipping tag creation."
+            else
+              git tag "${tag}"
+              git push origin "${tag}"
+            fi
+          done
+          # Fails the run when an alias tag is missing or points somewhere else,
+          # so a partial push cannot leave consumers with an unresolvable range.
+          python3 scripts/release_tags.py --check
+
+      - name: Consumer smoke test
+        # A marketplace entry for a local package carries no tag pattern, so
+        # `apm install` resolves a version against the per-package tag created
+        # above. Both the exact pin and the documented `^` range are installed:
+        # they take different resolver paths, and only the range needs an alias
+        # tag for a past release to keep resolving.
+        run: |
+          set -euo pipefail
+          plan="$(python3 scripts/release_tags.py --plan)"
+          mapfile -t tags <<< "${plan}"
+          (( ${#tags[@]} > 1 )) || { echo "no tag plan" >&2; exit 1; }
+          version="$(python3 scripts/release_tags.py --version)"
+          sources="$(python3 scripts/release_tags.py --sources)"
+          marketplace="${{ github.event.repository.name }}"
+          root="${PWD}"
+          apm marketplace add "${{ github.repository }}"
+          for spec in "${version}" "^${version}"; do
+            smoke="$(mktemp -d)"
+            trap 'rm -rf "${smoke}"' EXIT
+            (
+              cd "${smoke}"
+              git init -q .
+              {
+                echo "name: smoke"
+                echo "version: 0.0.1"
+                echo "targets: [copilot]"
+                echo "dependencies:"
+                echo "  apm:"
+                while IFS=$'\t' read -r name _path; do
+                  [ -n "${name}" ] || continue
+                  echo "    - name: ${name}"
+                  echo "      marketplace: ${marketplace}"
+                  echo "      version: \"${spec}\""
+                done <<< "${sources}"
+              } > apm.yml
+              apm install
+              test -n "$(ls -A .agents/skills)"
+              # Expectation comes from the repository, not a hardcoded list, so
+              # renaming a skill cannot fail the release job for the wrong reason.
+              while IFS=$'\t' read -r _name path; do
+                for skill_dir in "${root}/${path}"/.apm/skills/*/; do
+                  skill="$(basename "${skill_dir}")"
+                  test -f ".agents/skills/${skill}/SKILL.md"
+                done
+              done <<< "${sources}"
+            )
+          done
+          echo "consumer installs resolved ${version} exactly and as ^${version}"
+
+      - name: Create GitHub Release
+        # Last mutation, after the consumer path is proven: a published release
+        # for an uninstallable tag set is the outcome this ordering prevents.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch --tags --force origin
-          # Lockstep versioning: the root apm.yml `version` is the release
-          # anchor; `apm pack --check-versions` enforces every package matches it.
-          version="$(sed -n 's/^version:[[:space:]]*//p' apm.yml | head -n1)"
-          tag="v${version}"
-          # This workflow is the single owner of tags and releases. Tag creation
-          # is idempotent; release creation is keyed on the tag rather than on
-          # this push, so a run that failed after the tag push - or a tag pushed
-          # by hand - gets its release on the next run instead of being skipped.
-          if git rev-parse "${tag}" >/dev/null 2>&1; then
-            echo "Tag ${tag} already exists; skipping tag creation."
-          else
-            git tag "${tag}"
-            git push origin "${tag}"
-          fi
-          gh release view "${tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
-            || gh release create "${tag}" \
+          release_tag="$(python3 scripts/release_tags.py --plan | head -n1)"
+          gh release view "${release_tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "${release_tag}" \
                  --repo "${{ github.repository }}" \
-                 --title "${tag}" \
+                 --title "${release_tag}" \
                  --generate-notes

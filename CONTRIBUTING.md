@@ -80,6 +80,7 @@ Run before opening a PR:
 bash scripts/check-public-safety.sh
 apm marketplace check
 apm pack --check-versions --check-clean --dry-run
+python3 scripts/release_tags.py --plan
 find plugins -path '*/.apm/skills/*/SKILL.md' -exec apm audit --file {} \;
 ```
 

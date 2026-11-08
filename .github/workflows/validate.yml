@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Release tags are needed by the backfill check below, which reads the
+          # tags this repository has already published.
+          fetch-depth: 0
 
       - name: Public-safety scan
         run: bash scripts/check-public-safety.sh
@@ -30,11 +34,36 @@ jobs:
         # version pin is the supply-chain control for this dependency.
         run: pip install apm-cli==0.35.0
 
+      - name: Install script dependencies
+        # Pinned explicitly rather than inherited from apm-cli's requirements;
+        # matches the pin in publish.yml.
+        run: pip install pyyaml==6.0.3
+
       - name: Marketplace check
         run: apm marketplace check
 
       - name: Release gates
         run: apm pack --check-versions --check-clean --dry-run
+
+      - name: Release tag plan
+        # Offline derivation check for the two tag families (ADR-0002). The
+        # published set itself is verified by the `--check` mode in publish.yml.
+        run: python3 scripts/release_tags.py --plan
+
+      - name: Backfill debt
+        # Non-blocking: releases published before the alias tags existed cannot
+        # resolve an exact pin until they are backfilled, so make that debt
+        # visible here instead of relying on memory.
+        run: |
+          set -euo pipefail
+          missing="$(python3 scripts/release_tags.py --backfill)"
+          if [ "${missing}" = "no missing alias tags" ]; then
+            echo "no backfill debt"
+            exit 0
+          fi
+          while IFS= read -r line; do
+            echo "::warning title=Backfill debt::${line}"
+          done <<< "${missing}"
 
       - name: Skill audit
         # Matches CONTRIBUTING.md: audit every package's skills, not just one.
