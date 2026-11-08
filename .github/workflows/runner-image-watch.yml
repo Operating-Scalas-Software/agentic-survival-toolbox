@@ -1,0 +1,28 @@
+name: Runner image watch
+
+on:
+  schedule:
+    # Weekly, so a new Ubuntu LTS image surfaces as an issue instead of as a
+    # surprise. Dependabot covers the action pins but not `runs-on:` labels.
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Check for a newer Ubuntu runner image
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/runner_image_watch.py
