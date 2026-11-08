@@ -2,16 +2,37 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "plugins/sdlc/.apm/skills/meta-evaluate-skill/scripts"))
+SCRIPT = (
+    ROOT
+    / "plugins"
+    / "sdlc"
+    / ".apm"
+    / "skills"
+    / "meta-evaluate-skill"
+    / "scripts"
+    / "evaluate_skill.py"
+)
 
-import evaluate_skill as evaluate  # noqa: E402
+
+def load_script(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+evaluate = load_script(SCRIPT)
 
 DESCRIPTION = (
     "Use when a test needs a well-formed skill package with every deterministic check passing."
@@ -269,6 +290,15 @@ class TestLoadJudge:
             evaluate.load_judge(path)
         assert exit_info.value.code == 2
 
+    def test_negative_score_exits_two(self, tmp_path: Path) -> None:
+        payload = judge_payload()
+        payload["dimensions"]["clarity"]["score"] = -1
+        path = tmp_path / "judge.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(SystemExit) as exit_info:
+            evaluate.load_judge(path)
+        assert exit_info.value.code == 2
+
     def test_non_mapping_dimensions_exits_two(self, tmp_path: Path) -> None:
         path = tmp_path / "judge.json"
         path.write_text(json.dumps({"dimensions": "nope"}), encoding="utf-8")
@@ -311,6 +341,13 @@ class TestMain:
         assert run(monkeypatch, str(directory), "--fail-under", "99") == 1
         capsys.readouterr()
 
+    def test_fail_under_is_met(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        directory = make_skill(tmp_path)
+        assert run(monkeypatch, str(directory), "--fail-under", "50") == 0
+        capsys.readouterr()
+
     def test_invalid_skill_path_exits_two(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -320,7 +357,7 @@ class TestMain:
 
 
 class TestRepositorySkills:
-    def test_every_shipped_skill_passes(self) -> None:
+    def test_every_shipped_skill_passes(self, capsys: pytest.CaptureFixture[str]) -> None:
         skills = sorted(ROOT.glob("plugins/*/.apm/skills/*"))
         if not skills:
             pytest.skip("no skills in this repository")
@@ -328,3 +365,4 @@ class TestRepositorySkills:
             checks, summary = evaluate.run_checks(directory)
             assert [check.id for check in checks if check.status == "fail"] == [], directory
             assert summary["name"] == directory.name, directory
+        capsys.readouterr()

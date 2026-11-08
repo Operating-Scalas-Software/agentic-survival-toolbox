@@ -16,7 +16,8 @@ plugins/<pkg>/                 # one package per directory
   README.md                    # consumer-facing package docs
   .apm/skills/<name>/          # skills: SKILL.md + scripts/, references/, assets/
 tests/                         # unit/integration tests (never packaged)
-docs/                          # process docs and ADRs
+docs/*.md                      # process docs
+docs/adr/NNNN-*.md             # Architecture Decision Records
 ```
 
 ## What we accept

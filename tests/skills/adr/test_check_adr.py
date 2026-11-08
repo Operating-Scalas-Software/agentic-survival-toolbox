@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "plugins/sdlc/.apm/skills/adr/scripts"))
+SCRIPT = ROOT / "plugins" / "sdlc" / ".apm" / "skills" / "adr" / "scripts" / "check_adr.py"
 
-import check_adr  # noqa: E402
+
+def load_script(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+check_adr = load_script(SCRIPT)
 
 VALID = """\
 ---
@@ -298,9 +310,12 @@ class TestMain:
 
 
 class TestRepositoryAdrs:
-    def test_every_shipped_adr_conforms(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_every_shipped_adr_conforms(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         directory = ROOT / "docs" / "adr"
         if not directory.is_dir():
             pytest.skip("no ADRs in this repository")
         monkeypatch.setattr(sys, "argv", ["check_adr.py", str(directory)])
         assert check_adr.main() == 0
+        capsys.readouterr()
