@@ -1,0 +1,46 @@
+name: Runner image watch
+
+on:
+  schedule:
+    # Weekly, so a new Ubuntu LTS image surfaces as an issue instead of as a
+    # surprise. Dependabot covers the action pins but not `runs-on:` labels.
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+  # Exercise the script pre-merge; `schedule` and `workflow_dispatch` never fire
+  # for a branch, so without this the first run of a change would be post-merge.
+  pull_request:
+    paths:
+      - .github/workflows/runner-image-watch.yml
+      - scripts/runner_image_watch.py
+      - tests/scripts/test_runner_image_watch.py
+
+concurrency:
+  group: runner-image-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    # Deliberately the one job that does not pin a versioned label: this check
+    # exists to report that a pinned image was retired, so it must not run on the
+    # image it watches. `ubuntu-latest` is the label GitHub keeps supported.
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Check for a newer Ubuntu runner image
+        # A pull request only reads the feed: opening an issue is a
+        # default-branch concern, and a fork's token is read-only anyway.
+        run: >-
+          python3 scripts/runner_image_watch.py
+          ${{ github.event_name == 'pull_request' && '--dry-run' || '' }}

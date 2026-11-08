@@ -13,7 +13,9 @@ plugins/<pkg>/                 # one package per directory
 tests/                         # unit/integration tests (never packaged)
 docs/                          # process docs and ADRs
 scripts/check-public-safety.sh # blocking leak scan
-.github/workflows/             # validate.yml, publish.yml, release.yml
+scripts/runner_image_watch.py  # reports an outdated Ubuntu runner label
+.github/workflows/             # validate.yml, publish.yml, release.yml,
+                               # runner-image-watch.yml
 .claude-plugin/marketplace.json # generated (committed)
 .github/plugin/marketplace.json # generated (committed)
 ```
@@ -52,7 +54,13 @@ apm marketplace check                                       # every package reso
 apm pack --check-versions --check-clean --dry-run           # release gates
 apm pack                                                    # regenerate marketplace JSONs
 pytest -q tests                                             # unit/integration tests
+python3 scripts/runner_image_watch.py --dry-run              # would the runner image bump?
 ```
+
+`runner_image_watch.py` runs weekly from `runner-image-watch.yml` and opens an
+issue when a newer Ubuntu image is published or the pinned one disappears. It
+does not edit the workflows, so a bump stays a reviewed change; dependabot does
+not track `runs-on:` labels.
 
 After changing `apm.yml` or any skill, run `apm pack` and commit the regenerated
 marketplace JSONs.
