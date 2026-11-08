@@ -95,16 +95,18 @@ jobs:
           # anchor; `apm pack --check-versions` enforces every package matches it.
           version="$(sed -n 's/^version:[[:space:]]*//p' apm.yml | head -n1)"
           tag="v${version}"
+          # This workflow is the single owner of tags and releases. Tag creation
+          # is idempotent; release creation is keyed on the tag rather than on
+          # this push, so a run that failed after the tag push - or a tag pushed
+          # by hand - gets its release on the next run instead of being skipped.
           if git rev-parse "${tag}" >/dev/null 2>&1; then
-            echo "Tag ${tag} already exists; skipping."
+            echo "Tag ${tag} already exists; skipping tag creation."
           else
             git tag "${tag}"
             git push origin "${tag}"
-            # This workflow is the single owner of tags and releases; there is
-            # no separate release workflow. Pushes made with GITHUB_TOKEN do
-            # not trigger other workflows anyway.
-            gh release create "${tag}" \
-              --repo "${{ github.repository }}" \
-              --title "${tag}" \
-              --generate-notes
           fi
+          gh release view "${tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "${tag}" \
+                 --repo "${{ github.repository }}" \
+                 --title "${tag}" \
+                 --generate-notes
