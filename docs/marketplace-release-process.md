@@ -66,7 +66,8 @@ Making that workflow the sole owner instead would need either `actions: write`
 granted to `publish.yml` for a `workflow_dispatch` handoff, or a long-lived
 token or App credential so the tag push cascades. Both trade a single run that
 owns the whole flow for a second, asynchronous failure surface, plus a secret to
-rotate in the token case. See #7 for the decision.
+rotate in the token case. Decided in #7; recorded in
+[ADR-0001](adr/0001-publish-workflow-owns-releases.md).
 
 ## How versioning works
 
