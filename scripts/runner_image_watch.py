@@ -20,17 +20,28 @@ import re
 import sys
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Literal, Sequence
+from urllib.parse import quote
 
 DEFAULT_API = "https://api.github.com"
 RELEASES_PATH = "/repos/actions/runner-images/releases"
 API_VERSION = "2022-11-28"
-MAX_PAGES = 5
+MAX_PAGES = 30
 
-# `runs-on: ubuntu-26.04` (optionally quoted). Runner labels are always LTS,
-# hence the `.04` suffix; the monthly number is kept for readability only.
-LABEL_PATTERN = re.compile(r"runs-on:\s*['\"]?ubuntu-(\d{2})\.(\d{2})")
+# Presence in the release feed is the only "still published" signal GitHub
+# offers, so "retired" means "no release within this window", not "withdrawn by
+# GitHub". Paging stops once the Ubuntu tags span this far back.
+FEED_WINDOW = timedelta(days=365)
+
+# `runs-on: ubuntu-26.04` (optionally quoted). Hosted Ubuntu images are LTS
+# only, hence the fixed `.04`; matching it exactly keeps `ubuntu-26.10` from
+# being read as a 26.04 pin. YAML comments are stripped before matching so a
+# commented-out label is not counted. The sequence form
+# (`runs-on: [self-hosted, ubuntu-26.04]`) and `${{ matrix.os }}` are not
+# matched, so a workflow that adopts either style would go unchecked.
+LABEL_PATTERN = re.compile(r"runs-on:\s*['\"]?ubuntu-(\d{2})\.04\b")
 
 # Stable image releases are tagged `ubuntu26/20261101.186` (plus `-arm64` and
 # `ubuntu-slim` variants). Only the Ubuntu release number matters here.
@@ -41,8 +52,8 @@ TAG_PATTERN = re.compile(r"^ubuntu(\d{2})(?:-arm64)?/")
 class Finding:
     """A runner-image change worth reporting."""
 
-    kind: str  # "upgrade" | "retired"
-    current: tuple[int, int] | None
+    kind: Literal["upgrade", "retired"]
+    current: tuple[int, int]
     target: tuple[int, int] | None
 
 
@@ -55,8 +66,10 @@ def pinned_versions(texts: Iterable[str]) -> set[tuple[int, int]]:
     """Extract every pinned Ubuntu runner version from workflow sources."""
     versions = set()
     for text in texts:
-        for major, minor in LABEL_PATTERN.findall(text):
-            versions.add((int(major), int(minor)))
+        for line in text.splitlines():
+            match = LABEL_PATTERN.search(line.split("#", 1)[0])
+            if match:
+                versions.add((int(match.group(1)), 4))
     return versions
 
 
@@ -77,13 +90,14 @@ def find_change(
 ) -> Finding | None:
     """Decide what, if anything, deserves an issue.
 
-    A newer published image wins over a retired pin: both are fixed by the same
-    bump, and the bump is the actionable one.
+    The newest pin is the one to beat: flagging a target that another workflow
+    already uses would open a weekly issue with nothing to do. A newer published
+    image wins over a stale pin, since a single bump fixes both.
     """
     if not pinned:
         return None
 
-    newest_pin = min(pinned)
+    newest_pin = max(pinned)
     newer = sorted(version for version in available if version > newest_pin)
     if newer:
         return Finding(kind="upgrade", current=newest_pin, target=newer[-1])
@@ -100,7 +114,8 @@ def render(finding: Finding, pinned: set[tuple[int, int]]) -> tuple[str, str]:
     pins = ", ".join(f"`{ubuntu_label(version)}`" for version in sorted(pinned))
 
     if finding.kind == "upgrade":
-        assert finding.target is not None and finding.current is not None
+        if finding.target is None:
+            raise ValueError("an upgrade finding needs a target version")
         title = f"ci: newer Ubuntu runner image available ({ubuntu_label(finding.target)})"
         body = f"""## Summary
 
@@ -121,14 +136,14 @@ workflows pin. Dependabot does not track `runs-on:`, so this needs a manual bump
 """
         return title, body
 
-    assert finding.current is not None
-    label = ubuntu_label(finding.current)
-    title = f"ci: {label} runner image is no longer published"
-    body = f"""## Summary
+    if finding.kind == "retired":
+        label = ubuntu_label(finding.current)
+        title = f"ci: {label} runner image is no longer published"
+        body = f"""## Summary
 
-`actions/runner-images` publishes no stable image for `{label}`, which the
-workflows still pin. Jobs may fail once the image is retired, so this is
-time-sensitive.
+`actions/runner-images` publishes no stable image for `{label}` within the
+release window this check reads, which the workflows still pin. Jobs may fail
+once the image is retired, so this is time-sensitive.
 
 Current pins: {pins}
 
@@ -139,7 +154,9 @@ Current pins: {pins}
 - [ ] Confirm the `validate` workflow is green on the branch
 - [ ] Close this issue once the bump is merged
 """
-    return title, body
+        return title, body
+
+    raise ValueError(f"unknown finding kind: {finding.kind!r}")
 
 
 def load_pinned(workflows_dir: Path) -> set[tuple[int, int]]:
@@ -160,31 +177,74 @@ def _request(
     request = urllib.request.Request(url, data=data, method=method)
     request.add_header("Accept", "application/vnd.github+json")
     request.add_header("X-GitHub-Api-Version", API_VERSION)
+    if data is not None:
+        # `urllib` defaults to form encoding whenever a body is set; the
+        # issue-creation call is the only write in this repo, so state the type
+        # rather than relying on GitHub parsing a JSON body sent as a form.
+        request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
 
 
-def fetch_releases(api_url: str, token: str | None) -> list[dict]:
-    """Page through the runner-images release feed."""
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _ubuntu_window_covered(releases: Sequence[dict], now: datetime) -> bool:
+    """True once the collected Ubuntu releases reach back past FEED_WINDOW."""
+    stamps = [
+        stamp
+        for stamp in (
+            _parse_timestamp(release.get("published_at"))
+            for release in releases
+            if TAG_PATTERN.match(release.get("tag_name") or "")
+        )
+        if stamp is not None
+    ]
+    return bool(stamps) and min(stamps) <= now - FEED_WINDOW
+
+
+def fetch_releases(
+    api_url: str, token: str | None, *, now: datetime | None = None
+) -> list[dict]:
+    """Page through the runner-images release feed.
+
+    Paging stops once the Ubuntu tags span FEED_WINDOW rather than after a fixed
+    number of pages, because a busy week of macOS and Windows releases would
+    otherwise shorten the stretch of history this check can see.
+    """
+    moment = now or datetime.now(timezone.utc)
     releases: list[dict] = []
     for page in range(1, MAX_PAGES + 1):
         batch = _request(f"{api_url}{RELEASES_PATH}?per_page=100&page={page}", token)
         if not isinstance(batch, list):
             break
         releases.extend(batch)
-        if len(batch) < 100:
+        if len(batch) < 100 or _ubuntu_window_covered(releases, moment):
             break
     return releases
 
 
 def find_open_issue(repo: str, title: str, api_url: str, token: str | None) -> bool:
-    """True when an open issue already carries this exact title."""
-    issues = _request(f"{api_url}/repos/{repo}/issues?state=open&per_page=100", token)
-    if not isinstance(issues, list):
+    """True when an open issue already carries this exact title.
+
+    The search API has no first-page window and excludes pull requests via
+    ``is:issue``; the exact comparison keeps ``in:title``'s fuzzy matching from
+    closing the gate early.
+    """
+    query = quote(f'repo:{repo} is:issue state:open in:title "{title}"')
+    result = _request(f"{api_url}/search/issues?q={query}&per_page=100", token)
+    if not isinstance(result, dict):
         return False
-    return any(issue.get("title") == title for issue in issues)
+    items = result.get("items") or []
+    return any(item.get("title") == title for item in items)
 
 
 def create_issue(repo: str, title: str, body: str, api_url: str, token: str) -> str:
@@ -232,15 +292,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     title, body = render(finding, pinned)
-    print(title)
     if args.dry_run:
+        # Echoing the headline before the environment check would read like the
+        # issue had been opened, so keep the body on the dry-run path only.
+        print(title)
         print(body)
         return 0
 
     if not repo or not token:
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_TOKEN are required without --dry-run")
     if find_open_issue(repo, title, api_url, token):
-        print("an open issue already tracks this change")
+        print(f"{title}: an open issue already tracks this change")
         return 0
 
     print(f"opened {create_issue(repo, title, body, api_url, token)}")
