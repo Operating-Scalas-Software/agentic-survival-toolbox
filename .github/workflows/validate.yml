@@ -61,7 +61,8 @@ jobs:
           py=(tests/**/test_*.py tests/**/*_test.py)
           js=(tests/**/*.test.mjs tests/**/*.test.js)
           if (( ${#py[@]} > 0 )); then
-            pip install pytest==9.2.0
+            # pyyaml: imported by the skill scripts the tests load.
+            pip install pytest==9.2.0 pyyaml
             pytest -q tests
           fi
           if (( ${#js[@]} > 0 )); then

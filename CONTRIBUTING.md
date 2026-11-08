@@ -57,7 +57,10 @@ docs/                          # process docs and ADRs
 - Tests live under top-level `tests/`, outside the packaged `.apm/` tree, so
   they run in CI and are excluded from releases by construction.
 - Mirror the source path: `scripts/runner_image_watch.py` is covered by
-  `tests/scripts/test_runner_image_watch.py`.
+  `tests/scripts/test_runner_image_watch.py`, and
+  `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` by
+  `tests/skills/adr/test_check_adr.py`.
+- Skill scripts import `pyyaml`, so install it alongside `pytest`.
 - Python: `tests/**/test_*.py` and `tests/**/*_test.py`, run with `pytest`.
   Node: `tests/**/*.test.{js,mjs}`, run with `node --test tests/`.
 
