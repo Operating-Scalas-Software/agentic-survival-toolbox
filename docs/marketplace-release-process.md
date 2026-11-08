@@ -8,7 +8,10 @@ How `agentic-survival-toolbox` is published.
 - On merge, `publish.yml` regenerates the marketplace output and pushes it to a
   dedicated `marketplace` branch (rolling "latest").
 - Versioned releases are anchored by `v*` git tags, created when the
-  marketplace `version` changes.
+  marketplace `version` changes. Each release also publishes one
+  `{package}--v{version}` tag per package, because that is the tag `apm install`
+  resolves a marketplace version range against (see
+  [ADR-0002](adr/0002-publish-per-package-release-tags.md)).
 
 ```mermaid
 flowchart LR
@@ -17,7 +20,7 @@ flowchart LR
   MAIN --> PUB["publish.yml"]
   PUB --> GATES["apm pack: regenerate marketplace JSONs"]
   GATES --> MP["push marketplace branch<br/>(rolling latest)"]
-  GATES -->|version bumped| TAG["tag vX.Y.Z"]
+  GATES -->|version bumped| TAG["tag vX.Y.Z<br/>+ {package}--vX.Y.Z"]
   TAG --> REL["notes-only GitHub Release"]
 ```
 
@@ -35,10 +38,23 @@ flowchart LR
    branch moved, and git's non-fast-forward rejection is the final guard (a race
    fails the run rather than losing an update). When nothing changed, no commit
    is made.
-4. **Tag + release** — when the version changed, the workflow pushes the
-   `vX.Y.Z` tag (per `marketplace.build.tagPattern: "v{version}"`) and creates
-   the notes-only GitHub Release itself. `publish.yml` is the single owner of
-   both steps; there is no separate release workflow and no `release.yml`.
+4. **Tag + release** — when the version changed, the workflow pushes two tag
+   families from the same commit and creates the notes-only GitHub Release
+   itself. `publish.yml` is the single owner of both steps; there is no separate
+   release workflow and no `release.yml`.
+
+   - `vX.Y.Z` is the release anchor (`marketplace.build.tagPattern: "v{version}"`)
+     and what the GitHub Release is keyed on.
+   - `{package}--vX.Y.Z`, one per entry in `marketplace.packages`, is what
+     `apm install` resolves a marketplace `version` range against. The packed
+     marketplace entry for a local package source carries no tag pattern, so
+     without this tag a range such as `^0.1.0` fails with
+     `No tag matching version`.
+
+   `scripts/release_tags.py` derives both families from the root `apm.yml`
+   (`--plan`); the same run then asserts they point at the same commit
+   (`--check`) and installs the package into a scratch repository to prove the
+   consumer path works.
 
    Tag creation is idempotent — an existing tag is left alone. Release creation
    is keyed on the tag, not on the push, so it converges: if `gh release create`
@@ -76,7 +92,11 @@ rotate in the token case. Decided in #7; recorded in
 - The tag derives from the marketplace (root `apm.yml`) `version` via
   `tagPattern: "v{version}"`; `--check-versions` (lockstep) enforces every
   package `version` matches it.
-- Consumers resolve a version from these tags:
+- Consumers resolve a version from these tags; a range such as `^0.1.0` matches
+  the `{package}--v{version}` tags, so it keeps working across patch and minor
+  releases. Releases published before the alias tags existed can be backfilled
+  once with `python3 scripts/release_tags.py --backfill` (add `--apply` to
+  create the tags, then push them).
 
 ```yaml
 dependencies:

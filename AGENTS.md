@@ -43,10 +43,13 @@ regenerate the marketplace JSONs, and open a PR against `main`.
 ## Release process
 
 Merging to `main` triggers `publish.yml`, which regenerates the marketplace
-output, pushes the `marketplace` branch, and tags `vX.Y.Z` when the version
-changed. `publish.yml` is the single owner of tags and releases. See
+output, pushes the `marketplace` branch, and tags `vX.Y.Z` plus one
+`{package}--vX.Y.Z` tag per package when the version changed (the second family
+is what `apm install` resolves a version range against). `publish.yml` is the
+single owner of tags and releases. See
 [docs/marketplace-release-process.md](docs/marketplace-release-process.md) and
-[ADR-0001](docs/adr/0001-publish-workflow-owns-releases.md).
+[ADR-0001](docs/adr/0001-publish-workflow-owns-releases.md),
+[ADR-0002](docs/adr/0002-publish-per-package-release-tags.md).
 
 ## Commands
 
@@ -55,6 +58,7 @@ scripts/check-public-safety.sh                              # blocking leak scan
 apm marketplace check                                       # every package resolves
 apm pack --check-versions --check-clean --dry-run           # release gates
 apm pack                                                    # regenerate marketplace JSONs
+python3 scripts/release_tags.py --plan                       # release tags for this version
 pytest -q tests                                             # unit/integration tests
 python3 scripts/runner_image_watch.py --dry-run              # would the runner image bump?
 ```
