@@ -37,11 +37,36 @@ flowchart LR
    is made.
 4. **Tag + release** — when the version changed, the workflow pushes the
    `vX.Y.Z` tag (per `marketplace.build.tagPattern: "v{version}"`) and creates
-   the notes-only GitHub Release itself. A tag pushed by the workflow uses
-   `GITHUB_TOKEN`, which does not trigger `release.yml`; that workflow still
-   opens a release for tags pushed manually.
+   the notes-only GitHub Release itself. `publish.yml` is the single owner of
+   both steps; there is no separate release workflow and no `release.yml`.
+
+   Tag creation is idempotent — an existing tag is left alone. Release creation
+   is keyed on the tag, not on the push, so it converges: if `gh release create`
+   failed after the tag push, or the release was deleted to regenerate its
+   notes, the next `publish.yml` run creates it. A tag pushed by hand gets its
+   release the same way on the next merge, or immediately with:
+
+   ```bash
+   gh release create vX.Y.Z \
+     --repo <owner>/agentic-survival-toolbox \
+     --title vX.Y.Z \
+     --generate-notes
+   ```
 
 No `zip` or `sha256sum` artifacts are produced.
+
+## Why there is no separate release workflow
+
+A `release.yml` triggered on `push: tags: ["v*"]` cannot run for the tags this
+pipeline creates: a tag pushed with `GITHUB_TOKEN` does not trigger further
+workflows, so it would only fire for hand-pushed tags — duplicating logic
+`publish.yml` already runs, on a path nothing else exercises.
+
+Making that workflow the sole owner instead would need either `actions: write`
+granted to `publish.yml` for a `workflow_dispatch` handoff, or a long-lived
+token or App credential so the tag push cascades. Both trade a single run that
+owns the whole flow for a second, asynchronous failure surface, plus a secret to
+rotate in the token case. See #7 for the decision.
 
 ## How versioning works
 
