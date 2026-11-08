@@ -11,7 +11,8 @@ plugins/<pkg>/                 # one package per directory
   plugin.json                  # Copilot Agent Plugin manifest
   .apm/skills/<name>/          # skills (SKILL.md + scripts/ + references/)
 tests/                         # unit/integration tests (never packaged)
-docs/                          # process docs and ADRs
+docs/*.md                      # process docs
+docs/adr/NNNN-*.md             # Architecture Decision Records
 scripts/check-public-safety.sh # blocking leak scan
 scripts/runner_image_watch.py  # reports an outdated Ubuntu runner label
 .github/workflows/             # validate.yml, publish.yml, runner-image-watch.yml
@@ -43,7 +44,9 @@ regenerate the marketplace JSONs, and open a PR against `main`.
 
 Merging to `main` triggers `publish.yml`, which regenerates the marketplace
 output, pushes the `marketplace` branch, and tags `vX.Y.Z` when the version
-changed. See [docs/marketplace-release-process.md](docs/marketplace-release-process.md).
+changed. `publish.yml` is the single owner of tags and releases. See
+[docs/marketplace-release-process.md](docs/marketplace-release-process.md) and
+[ADR-0001](docs/adr/0001-publish-workflow-owns-releases.md).
 
 ## Commands
 

@@ -40,8 +40,8 @@ dependencies:
 ### As a Copilot CLI plugin
 
 ```bash
-gh copilot marketplace add <owner>/agentic-survival-toolbox
-gh copilot plugin install sdlc
+copilot plugin marketplace add <owner>/agentic-survival-toolbox
+copilot plugin install sdlc@agentic-survival-toolbox
 ```
 
 ## License
