@@ -37,11 +37,13 @@ jobs:
         run: apm pack --check-versions --check-clean --dry-run
 
       - name: Skill audit
+        # Matches CONTRIBUTING.md: audit every package's skills, not just one.
         run: |
-          for f in plugins/sdlc/.apm/skills/*/SKILL.md; do
+          set -euo pipefail
+          while IFS= read -r f; do
             echo "auditing ${f}"
             apm audit --file "${f}"
-          done
+          done < <(find plugins -path '*/.apm/skills/*/SKILL.md' -print | sort)
 
   tests:
     runs-on: ubuntu-26.04
