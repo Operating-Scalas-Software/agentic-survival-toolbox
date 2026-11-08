@@ -14,7 +14,7 @@ tests/                         # unit/integration tests (never packaged)
 docs/                          # process docs and ADRs
 scripts/check-public-safety.sh # blocking leak scan
 scripts/runner_image_watch.py  # reports an outdated Ubuntu runner label
-.github/workflows/             # validate.yml, publish.yml, release.yml,
+.github/workflows/             # validate.yml, publish.yml,
                                # runner-image-watch.yml
 .claude-plugin/marketplace.json # generated (committed)
 .github/plugin/marketplace.json # generated (committed)

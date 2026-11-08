@@ -100,8 +100,9 @@ jobs:
           else
             git tag "${tag}"
             git push origin "${tag}"
-            # Pushes made with GITHUB_TOKEN do not trigger other workflows, so
-            # release.yml will not run; create the notes-only release here.
+            # This workflow is the single owner of tags and releases; there is
+            # no separate release workflow. Pushes made with GITHUB_TOKEN do
+            # not trigger other workflows anyway.
             gh release create "${tag}" \
               --repo "${{ github.repository }}" \
               --title "${tag}" \

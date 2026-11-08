@@ -37,9 +37,18 @@ flowchart LR
    is made.
 4. **Tag + release** — when the version changed, the workflow pushes the
    `vX.Y.Z` tag (per `marketplace.build.tagPattern: "v{version}"`) and creates
-   the notes-only GitHub Release itself. A tag pushed by the workflow uses
-   `GITHUB_TOKEN`, which does not trigger `release.yml`; that workflow still
-   opens a release for tags pushed manually.
+   the notes-only GitHub Release itself. `publish.yml` is the single owner of
+   both steps; there is no separate release workflow. Both are idempotent: an
+   existing tag skips tag creation, and the release is only created when the
+   tag is new.
+
+   Tags pushed by hand outside this workflow do not get a release
+   automatically. Re-running `publish.yml` is not required; create one for the
+   existing tag with:
+
+   ```bash
+   gh release create vX.Y.Z --generate-notes
+   ```
 
 No `zip` or `sha256sum` artifacts are produced.
 
