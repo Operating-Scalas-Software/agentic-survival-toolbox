@@ -58,8 +58,9 @@ The decision has these parts:
   release converges on the next publish run instead of needing manual repair.
 - Bad, because tag and release can no longer be reviewed or retried separately;
   changing one means changing the other.
-- Bad, because a manually pushed tag gets no release until the next merge, so
-  cutting a release out of band needs an explicit `gh release create`.
+- Bad, because a manually pushed tag gets no release until a merge sets the
+  `apm.yml` `version` to that tag, so cutting a release out of band needs an
+  explicit `gh release create`.
 - Bad, because tagging depends on the `GITHUB_TOKEN` write permission alone,
   with no token or App credential to fall back on if that permission is lost.
 
@@ -67,10 +68,10 @@ The decision has these parts:
 
 - `publish.yml` fails when `apm pack --check-versions` reports a version
   mismatch, so a tag can only come from a lockstep version.
-- `gh release view` runs before every `gh release create`, so an existing
-  release is never duplicated and a missing one fails the run loudly.
-- Review rule: `git ls-files .github/workflows/release.yml` returns nothing, and
-  a PR that adds it is rejected as a second owner.
+- `gh release view` gates `gh release create`, so an existing release is never
+  duplicated and a missing one is created; the run fails only if `create` fails.
+- `validate.yml` fails when `.github/workflows/release.yml` exists, so a second
+  owner cannot be merged.
 
 ## Pros and Cons of the Options
 

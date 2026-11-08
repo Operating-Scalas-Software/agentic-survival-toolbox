@@ -210,6 +210,15 @@ class TestOptions:
         result = check(tmp_path, text)
         assert any("option has no Pros and Cons" in w for w in result["warnings"])
 
+    def test_superseded_without_replacement_is_not_detected(self, tmp_path: Path) -> None:
+        # known defect: the reference check greps the whole file for a bare
+        # four-digit number, and the mandatory ISO `date:` always supplies one,
+        # so the "no replacement referenced" branch can never fire. Pinned here
+        # so fixing the check has to update this test.
+        text = VALID.replace("status: accepted", "status: superseded")
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
     def test_superseded_with_a_replacement_passes(self, tmp_path: Path) -> None:
         text = VALID.replace("status: accepted", "status: superseded").replace(
             "Reconsider when the demo grows a second consumer.",

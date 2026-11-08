@@ -60,11 +60,13 @@ docs/                          # process docs and ADRs
   `tests/scripts/test_runner_image_watch.py`, and
   `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` by
   `tests/skills/adr/test_check_adr.py`.
-- Skill scripts import `pyyaml`, so install it alongside `pytest`.
+- Skill scripts import `pyyaml`, which the command below installs with the
+  versions pinned in `.github/workflows/validate.yml`.
 - Python: `tests/**/test_*.py` and `tests/**/*_test.py`, run with `pytest`.
   Node: `tests/**/*.test.{js,mjs}`, run with `node --test tests/`.
 
 ```bash
+pip install pytest pyyaml   # pyyaml: imported by the skill scripts the tests load
 pytest -q tests
 node --test tests/
 ```

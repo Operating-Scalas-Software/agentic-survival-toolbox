@@ -44,7 +44,8 @@ flowchart LR
    is keyed on the tag, not on the push, so it converges: if `gh release create`
    failed after the tag push, or the release was deleted to regenerate its
    notes, the next `publish.yml` run creates it. A tag pushed by hand gets its
-   release the same way on the next merge, or immediately with:
+   release on the next merge that sets `apm.yml` `version` to that tag, or
+   immediately with:
 
    ```bash
    gh release create vX.Y.Z \
