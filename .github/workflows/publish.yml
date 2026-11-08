@@ -91,22 +91,68 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --force origin
-          # Lockstep versioning: the root apm.yml `version` is the release
-          # anchor; `apm pack --check-versions` enforces every package matches it.
-          version="$(sed -n 's/^version:[[:space:]]*//p' apm.yml | head -n1)"
-          tag="v${version}"
+          # Two tags per release, both from this commit: `v{version}` anchors the
+          # release, `{package}--v{version}` is what `apm install` resolves a
+          # marketplace version against (ADR-0002). Lockstep versioning: the
+          # root apm.yml `version` is the anchor and `apm pack --check-versions`
+          # enforces every package matches it.
+          mapfile -t tags < <(python3 scripts/release_tags.py --plan)
           # This workflow is the single owner of tags and releases. Tag creation
           # is idempotent; release creation is keyed on the tag rather than on
           # this push, so a run that failed after the tag push - or a tag pushed
           # by hand - gets its release on the next run instead of being skipped.
-          if git rev-parse "${tag}" >/dev/null 2>&1; then
-            echo "Tag ${tag} already exists; skipping tag creation."
-          else
-            git tag "${tag}"
-            git push origin "${tag}"
-          fi
-          gh release view "${tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
-            || gh release create "${tag}" \
+          for tag in "${tags[@]}"; do
+            if git rev-parse "${tag}" >/dev/null 2>&1; then
+              echo "Tag ${tag} already exists; skipping tag creation."
+            else
+              git tag "${tag}"
+              git push origin "${tag}"
+            fi
+          done
+          # Fails the run when an alias tag is missing or points somewhere else,
+          # so a partial push cannot leave consumers with an unresolvable range.
+          python3 scripts/release_tags.py --check
+          release_tag="${tags[0]}"
+          gh release view "${release_tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "${release_tag}" \
                  --repo "${{ github.repository }}" \
-                 --title "${tag}" \
+                 --title "${release_tag}" \
                  --generate-notes
+
+      - name: Consumer smoke test
+        # A marketplace entry for a local package carries no tag pattern, so
+        # `apm install` resolves a version against the per-package tag created
+        # above. This fails when only `v{version}` is published - the state that
+        # `apm marketplace check` reports as healthy.
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/release_tags.py --version)"
+          mapfile -t tags < <(python3 scripts/release_tags.py --plan)
+          marketplace="${{ github.event.repository.name }}"
+          smoke="$(mktemp -d)"
+          trap 'rm -rf "${smoke}"' EXIT
+          cd "${smoke}"
+          git init -q .
+          {
+            echo "name: smoke"
+            echo "version: 0.0.1"
+            echo "targets: [copilot]"
+            echo "dependencies:"
+            echo "  apm:"
+            for alias in "${tags[@]:1}"; do
+              echo "    - name: ${alias%%--v*}"
+              echo "      marketplace: ${marketplace}"
+              echo "      version: \"${version}\""
+            done
+          } > apm.yml
+          apm marketplace add "${{ github.repository }}"
+          apm install
+          test -n "$(ls -A .agents/skills)"
+          # `sdlc` is the package whose contents issue #1 pins; assert its three
+          # skills land so a resolution that silently deploys nothing is caught.
+          if printf '%s\n' "${tags[@]:1}" | grep -qx "sdlc--v${version}"; then
+            for skill in address-pr-comments adr meta-evaluate-skill; do
+              test -f ".agents/skills/${skill}/SKILL.md"
+            done
+          fi
+          echo "consumer install resolved ${version} and deployed skills"
