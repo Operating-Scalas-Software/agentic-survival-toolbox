@@ -145,6 +145,7 @@ class TestStructure:
         headings, collected = check_adr.sections("## Real\n\nbody\n\n```\n## Fake\n```\n")
         assert [title for _, title in headings] == ["Real"]
         assert "fake" not in collected
+        assert "Fake" not in collected["real"]
 
     def test_missing_h1(self, tmp_path: Path) -> None:
         result = check(tmp_path, VALID.replace("# Adopt the status quo for the demo", "Preamble"))
@@ -267,6 +268,37 @@ class TestOptions:
     def test_missing_replacement_is_rejected(self, tmp_path: Path) -> None:
         result = check(tmp_path, superseded_text("Superseded by ADR-0099."))
         assert any("replacement ADR-0099 does not exist" in e for e in result["errors"])
+
+    def test_duplicate_mentions_report_one_error(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0099 (see ADR-0099)."))
+        errors = [e for e in result["errors"] if "replacement ADR-0099" in e]
+        assert len(errors) == 1
+
+    @pytest.mark.parametrize("reference", ["- Related: ADR-0002.", "- Related: 0002-next.md."])
+    def test_cross_link_alone_is_not_a_replacement(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        # The template allows `Related: <other ADR>` in every ADR, so a cross-link
+        # must not satisfy the supersession rule.
+        write(tmp_path, name="0002-next.md")
+        result = check(tmp_path, superseded_text(reference))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_cross_link_is_not_reported_as_the_replacement(self, tmp_path: Path) -> None:
+        write(tmp_path, name="0002-next.md")
+        text = superseded_text("- Superseded by ADR-0002.\n- Related: ADR-0009.")
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_path_qualified_reference_is_resolved(self, tmp_path: Path) -> None:
+        (tmp_path / "adr").mkdir()
+        write(tmp_path, name="adr/0002-next.md")
+        result = check(tmp_path, superseded_text("Superseded by adr/0002-next.md."))
+        assert result["errors"] == []
+
+    def test_missing_path_qualified_reference_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by adr/0002-next.md."))
+        assert any("replacement ADR-0002 does not exist" in e for e in result["errors"])
 
     @pytest.mark.parametrize(
         "reference",

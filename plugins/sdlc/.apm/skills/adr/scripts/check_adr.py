@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
 from typing import NoReturn
@@ -44,11 +45,17 @@ LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 # always supplies one - and neither does `#12`: the skill requires an issue
 # link in every ADR, so an issue number would satisfy the rule for any draft.
 # The filename form needs a letter in its stem so a date such as
-# `2026-11-08.md` is not read as a record name.
+# `2026-11-08.md` is not read as a record name, and may carry a relative path
+# prefix (`adr/0002-next.md`) that is resolved from this ADR's directory, like
+# any other relative link.
 REPLACEMENT_REFERENCE = re.compile(
-    r"ADR[- ]?(\d{4})\b|\b(\d{4})-[a-z0-9-]*[a-z][a-z0-9-]*\.md\b",
+    r"ADR[- ]?(\d{4})\b|((?:[\w.\-]+/)*)\b(\d{4})-[a-z0-9-]*[a-z][a-z0-9-]*\.md\b",
     re.IGNORECASE,
 )
+# Only a sentence that claims the supersession names a replacement. A `Related:`
+# cross-link must neither satisfy the rule nor be read as the replacement.
+SUPERSESSION_CLAIM = re.compile(r"supersed|replac", re.IGNORECASE)
+SENTENCE = re.compile(r"(?<=[.!?])\s+")
 NO_REPLACEMENT = (
     "status is superseded but no replacement ADR is referenced "
     "(use ADR-NNNN or NNNN-*.md)"
@@ -106,26 +113,30 @@ def split_frontmatter(text: str) -> tuple[dict, str, str | None]:
     return {}, text, "missing closing '---'"
 
 
+def iter_unfenced(body: str) -> Iterator[str]:
+    """Yield the body lines that are outside fenced code blocks."""
+    in_fence = False
+    for line in body.splitlines():
+        if line.strip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            yield line
+
+
 def sections(body: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
     """Return all headings and the text under each (normalized) heading."""
     headings: list[tuple[int, str]] = []
     collected: dict[str, list[str]] = {}
     current: str | None = None
-    in_fence = False
-    for line in body.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            in_fence = not in_fence
-            collected.setdefault(current or "", []).append(line)
+    for line in iter_unfenced(body):
+        match = HEADING.match(line)
+        if match:
+            level, title = len(match.group(1)), match.group(2)
+            headings.append((level, title))
+            current = normalize(title)
+            collected.setdefault(current, [])
             continue
-        if not in_fence:
-            match = HEADING.match(line)
-            if match:
-                level, title = len(match.group(1)), match.group(2)
-                headings.append((level, title))
-                current = normalize(title)
-                collected.setdefault(current, [])
-                continue
         if current is not None:
             collected[current].append(line)
     return headings, {key: "\n".join(value) for key, value in collected.items()}
@@ -135,29 +146,36 @@ def normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value.lower().replace("`", "").strip())
 
 
-def unfenced(body: str) -> str:
-    """Drop fenced code blocks, so a quoted example cannot satisfy a prose rule."""
-    kept: list[str] = []
-    in_fence = False
-    for line in body.splitlines():
-        if line.strip().startswith(("```", "~~~")):
-            in_fence = not in_fence
-            continue
-        if not in_fence:
-            kept.append(line)
-    return "\n".join(kept)
-
-
 def replacement_errors(path: Path, number: int | None, body: str) -> list[str]:
-    """A superseded ADR must name another record that exists next to it."""
-    references = [
-        int(candidate)
-        for match in REPLACEMENT_REFERENCE.finditer(unfenced(body))
-        for candidate in match.groups()
-        if candidate
-    ]
+    """A superseded ADR must name another existing record as its replacement.
+
+    References are read only from sentences that claim the supersession, and a
+    `NNNN-*.md` reference resolves from this ADR's directory like any other
+    relative link. Mentions of one record are collapsed to a single claim.
+    """
+    references: dict[int, set[Path]] = {}
+    for line in iter_unfenced(body):
+        for sentence in SENTENCE.split(line):
+            if not SUPERSESSION_CLAIM.search(sentence):
+                continue
+            for match in REPLACEMENT_REFERENCE.finditer(sentence):
+                if match.group(1):
+                    references.setdefault(int(match.group(1)), set())
+                else:
+                    references.setdefault(int(match.group(3)), set()).add(
+                        (path.parent / match.group(0)).resolve()
+                    )
     if not references:
         return [NO_REPLACEMENT]
+    if any(
+        reference != number
+        and (
+            any(path.parent.glob(f"{reference:04d}-*.md"))
+            or any(target.exists() for target in targets)
+        )
+        for reference, targets in references.items()
+    ):
+        return []
     errors: list[str] = []
     for reference in references:
         if reference == number:
@@ -165,10 +183,9 @@ def replacement_errors(path: Path, number: int | None, body: str) -> list[str]:
                 "status is superseded but the reference points at this ADR itself "
                 f"(ADR-{reference:04d})"
             )
-        elif not any(path.parent.glob(f"{reference:04d}-*.md")):
+        else:
             errors.append(
-                f"status is superseded but replacement ADR-{reference:04d} does not "
-                "exist next to this ADR"
+                f"status is superseded but replacement ADR-{reference:04d} does not exist"
             )
     return errors
 
