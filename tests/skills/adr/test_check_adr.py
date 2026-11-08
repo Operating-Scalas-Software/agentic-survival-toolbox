@@ -24,6 +24,7 @@ def load_script(path: Path) -> ModuleType:
 
 
 check_adr = load_script(SCRIPT)
+NO_REPLACEMENT = check_adr.NO_REPLACEMENT
 
 VALID = """\
 ---
@@ -87,6 +88,12 @@ def check(
     return check_adr.check_file(write(tmp_path, text, name), numbers if numbers else {})
 
 
+def superseded_text(reference: str) -> str:
+    return VALID.replace("status: accepted", "status: superseded").replace(
+        "Reconsider when the demo grows a second consumer.", reference
+    )
+
+
 def run(monkeypatch: pytest.MonkeyPatch, *args: str) -> int:
     monkeypatch.setattr(sys, "argv", ["check_adr.py", *args])
     return check_adr.main()
@@ -138,6 +145,7 @@ class TestStructure:
         headings, collected = check_adr.sections("## Real\n\nbody\n\n```\n## Fake\n```\n")
         assert [title for _, title in headings] == ["Real"]
         assert "fake" not in collected
+        assert "Fake" not in collected["real"]
 
     def test_missing_h1(self, tmp_path: Path) -> None:
         result = check(tmp_path, VALID.replace("# Adopt the status quo for the demo", "Preamble"))
@@ -222,21 +230,90 @@ class TestOptions:
         result = check(tmp_path, text)
         assert any("option has no Pros and Cons" in w for w in result["warnings"])
 
-    def test_superseded_without_replacement_is_not_detected(self, tmp_path: Path) -> None:
-        # known defect: the reference check greps the whole file for a bare
-        # four-digit number, and the mandatory ISO `date:` always supplies one,
-        # so the "no replacement referenced" branch can never fire. Pinned here
-        # so fixing the check has to update this test.
-        text = VALID.replace("status: accepted", "status: superseded")
+    def test_superseded_requires_a_replacement(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Reconsider the demo later."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_a_body_date_is_not_a_replacement_reference(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Decided on 2026-11-08, after a long debate."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_template_issue_link_is_not_a_replacement(self, tmp_path: Path) -> None:
+        # The skill requires an issue link in every ADR, so `#12` cannot stand in
+        # for a replacement record.
+        reference = "Deferred: follow-up - tracked in #12.\n- Related: #12."
+        result = check(tmp_path, superseded_text(reference))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_fenced_example_is_not_a_replacement(self, tmp_path: Path) -> None:
+        text = VALID.replace("status: accepted", "status: superseded").replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "```markdown\nSuperseded by ADR-0002.\n```",
+        )
+        result = check(tmp_path, text)
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_date_shaped_filename_is_not_a_replacement(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Archived as 2026-11-08.md."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_five_digit_reference_does_not_satisfy_the_rule(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-00021."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_self_reference_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0001."))
+        assert any("points at this ADR itself" in e for e in result["errors"])
+
+    def test_missing_replacement_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0099."))
+        assert any("replacement ADR-0099 does not exist" in e for e in result["errors"])
+
+    def test_duplicate_mentions_report_one_error(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0099 (see ADR-0099)."))
+        errors = [e for e in result["errors"] if "replacement ADR-0099" in e]
+        assert len(errors) == 1
+
+    @pytest.mark.parametrize("reference", ["- Related: ADR-0002.", "- Related: 0002-next.md."])
+    def test_cross_link_alone_is_not_a_replacement(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        # The template allows `Related: <other ADR>` in every ADR, so a cross-link
+        # must not satisfy the supersession rule.
+        write(tmp_path, name="0002-next.md")
+        result = check(tmp_path, superseded_text(reference))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_cross_link_is_not_reported_as_the_replacement(self, tmp_path: Path) -> None:
+        write(tmp_path, name="0002-next.md")
+        text = superseded_text("- Superseded by ADR-0002.\n- Related: ADR-0009.")
         result = check(tmp_path, text)
         assert result["errors"] == []
 
-    def test_superseded_with_a_replacement_passes(self, tmp_path: Path) -> None:
-        text = VALID.replace("status: accepted", "status: superseded").replace(
-            "Reconsider when the demo grows a second consumer.",
+    def test_path_qualified_reference_is_resolved(self, tmp_path: Path) -> None:
+        (tmp_path / "adr").mkdir()
+        write(tmp_path, name="adr/0002-next.md")
+        result = check(tmp_path, superseded_text("Superseded by adr/0002-next.md."))
+        assert result["errors"] == []
+
+    def test_missing_path_qualified_reference_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by adr/0002-next.md."))
+        assert any("replacement ADR-0002 does not exist" in e for e in result["errors"])
+
+    @pytest.mark.parametrize(
+        "reference",
+        [
             "Superseded by ADR-0002.",
-        )
-        result = check(tmp_path, text)
+            "Superseded by ADR 0002.",
+            "Superseded by adr-0002.",
+            "Superseded by 0002-next.md.",
+        ],
+    )
+    def test_replacement_reference_forms_are_accepted(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        write(tmp_path, name="0002-next.md")
+        result = check(tmp_path, superseded_text(reference))
         assert result["errors"] == []
 
 
