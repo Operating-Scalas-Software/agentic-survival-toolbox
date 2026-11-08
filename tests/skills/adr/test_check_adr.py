@@ -222,19 +222,33 @@ class TestOptions:
         result = check(tmp_path, text)
         assert any("option has no Pros and Cons" in w for w in result["warnings"])
 
-    def test_superseded_without_replacement_is_not_detected(self, tmp_path: Path) -> None:
-        # known defect: the reference check greps the whole file for a bare
-        # four-digit number, and the mandatory ISO `date:` always supplies one,
-        # so the "no replacement referenced" branch can never fire. Pinned here
-        # so fixing the check has to update this test.
+    def test_superseded_requires_a_replacement(self, tmp_path: Path) -> None:
         text = VALID.replace("status: accepted", "status: superseded")
         result = check(tmp_path, text)
-        assert result["errors"] == []
+        assert "status is superseded but no replacement ADR is referenced" in result["errors"]
 
-    def test_superseded_with_a_replacement_passes(self, tmp_path: Path) -> None:
+    def test_a_body_date_is_not_a_replacement_reference(self, tmp_path: Path) -> None:
         text = VALID.replace("status: accepted", "status: superseded").replace(
             "Reconsider when the demo grows a second consumer.",
+            "Decided on 2026-11-08, after a long debate.",
+        )
+        result = check(tmp_path, text)
+        assert "status is superseded but no replacement ADR is referenced" in result["errors"]
+
+    @pytest.mark.parametrize(
+        "reference",
+        [
             "Superseded by ADR-0002.",
+            "Superseded by ADR 0002.",
+            "Superseded by 0002-next.md.",
+            "Superseded in #12.",
+        ],
+    )
+    def test_replacement_reference_forms_are_accepted(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        text = VALID.replace("status: accepted", "status: superseded").replace(
+            "Reconsider when the demo grows a second consumer.", reference
         )
         result = check(tmp_path, text)
         assert result["errors"] == []

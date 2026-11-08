@@ -224,8 +224,12 @@ def check_file(path: Path, numbers: dict[int, list[str]]) -> dict:
         if name not in pros_headings:
             warnings.append(f"option has no Pros and Cons subsection: {option[:60]!r}")
 
+    # A replacement is referenced as `ADR-0002`, a `0002-*.md` filename, or an
+    # issue number such as `#12`. A bare four-digit run does not count: the
+    # mandatory ISO `date:` in the frontmatter always supplies one, which made
+    # this branch unreachable.
     if normalize(str(status)) == "superseded" and not re.search(
-        r"(ADR[- ]?\d{4}|\b\d{4}\b)", text
+        r"ADR[- ]?\d{4}|\b\d{4}-[a-z0-9-]+\.md\b|#\d+", body
     ):
         errors.append("status is superseded but no replacement ADR is referenced")
 
