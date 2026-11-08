@@ -39,6 +39,20 @@ FILENAME = re.compile(r"^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# A superseded ADR names its replacement as `ADR-0002` or as a `0002-*.md`
+# filename. A bare four-digit run does not count - the mandatory ISO `date:`
+# always supplies one - and neither does `#12`: the skill requires an issue
+# link in every ADR, so an issue number would satisfy the rule for any draft.
+# The filename form needs a letter in its stem so a date such as
+# `2026-11-08.md` is not read as a record name.
+REPLACEMENT_REFERENCE = re.compile(
+    r"ADR[- ]?(\d{4})\b|\b(\d{4})-[a-z0-9-]*[a-z][a-z0-9-]*\.md\b",
+    re.IGNORECASE,
+)
+NO_REPLACEMENT = (
+    "status is superseded but no replacement ADR is referenced "
+    "(use ADR-NNNN or NNNN-*.md)"
+)
 STOPWORDS = {
     "because",
     "being",
@@ -119,6 +133,44 @@ def sections(body: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
 
 def normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value.lower().replace("`", "").strip())
+
+
+def unfenced(body: str) -> str:
+    """Drop fenced code blocks, so a quoted example cannot satisfy a prose rule."""
+    kept: list[str] = []
+    in_fence = False
+    for line in body.splitlines():
+        if line.strip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def replacement_errors(path: Path, number: int | None, body: str) -> list[str]:
+    """A superseded ADR must name another record that exists next to it."""
+    references = [
+        int(candidate)
+        for match in REPLACEMENT_REFERENCE.finditer(unfenced(body))
+        for candidate in match.groups()
+        if candidate
+    ]
+    if not references:
+        return [NO_REPLACEMENT]
+    errors: list[str] = []
+    for reference in references:
+        if reference == number:
+            errors.append(
+                "status is superseded but the reference points at this ADR itself "
+                f"(ADR-{reference:04d})"
+            )
+        elif not any(path.parent.glob(f"{reference:04d}-*.md")):
+            errors.append(
+                f"status is superseded but replacement ADR-{reference:04d} does not "
+                "exist next to this ADR"
+            )
+    return errors
 
 
 def first_h1(headings: list[tuple[int, str]]) -> str | None:
@@ -224,14 +276,8 @@ def check_file(path: Path, numbers: dict[int, list[str]]) -> dict:
         if name not in pros_headings:
             warnings.append(f"option has no Pros and Cons subsection: {option[:60]!r}")
 
-    # A replacement is referenced as `ADR-0002`, a `0002-*.md` filename, or an
-    # issue number such as `#12`. A bare four-digit run does not count: the
-    # mandatory ISO `date:` in the frontmatter always supplies one, which made
-    # this branch unreachable.
-    if normalize(str(status)) == "superseded" and not re.search(
-        r"ADR[- ]?\d{4}|\b\d{4}-[a-z0-9-]+\.md\b|#\d+", body
-    ):
-        errors.append("status is superseded but no replacement ADR is referenced")
+    if normalize(str(status)) == "superseded":
+        errors.extend(replacement_errors(path, number, body))
 
     for target in LINK.findall(body):
         if target.startswith(("#", "http://", "https://", "mailto:")):

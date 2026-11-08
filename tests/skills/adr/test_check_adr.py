@@ -24,6 +24,7 @@ def load_script(path: Path) -> ModuleType:
 
 
 check_adr = load_script(SCRIPT)
+NO_REPLACEMENT = check_adr.NO_REPLACEMENT
 
 VALID = """\
 ---
@@ -85,6 +86,12 @@ def check(
     numbers: dict[int, list[str]] | None = None,
 ) -> dict:
     return check_adr.check_file(write(tmp_path, text, name), numbers if numbers else {})
+
+
+def superseded_text(reference: str) -> str:
+    return VALID.replace("status: accepted", "status: superseded").replace(
+        "Reconsider when the demo grows a second consumer.", reference
+    )
 
 
 def run(monkeypatch: pytest.MonkeyPatch, *args: str) -> int:
@@ -223,34 +230,58 @@ class TestOptions:
         assert any("option has no Pros and Cons" in w for w in result["warnings"])
 
     def test_superseded_requires_a_replacement(self, tmp_path: Path) -> None:
-        text = VALID.replace("status: accepted", "status: superseded")
-        result = check(tmp_path, text)
-        assert "status is superseded but no replacement ADR is referenced" in result["errors"]
+        result = check(tmp_path, superseded_text("Reconsider the demo later."))
+        assert NO_REPLACEMENT in result["errors"]
 
     def test_a_body_date_is_not_a_replacement_reference(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Decided on 2026-11-08, after a long debate."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_template_issue_link_is_not_a_replacement(self, tmp_path: Path) -> None:
+        # The skill requires an issue link in every ADR, so `#12` cannot stand in
+        # for a replacement record.
+        reference = "Deferred: follow-up - tracked in #12.\n- Related: #12."
+        result = check(tmp_path, superseded_text(reference))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_fenced_example_is_not_a_replacement(self, tmp_path: Path) -> None:
         text = VALID.replace("status: accepted", "status: superseded").replace(
-            "Reconsider when the demo grows a second consumer.",
-            "Decided on 2026-11-08, after a long debate.",
+            "- Reconsider when the demo grows a second consumer.",
+            "```markdown\nSuperseded by ADR-0002.\n```",
         )
         result = check(tmp_path, text)
-        assert "status is superseded but no replacement ADR is referenced" in result["errors"]
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_date_shaped_filename_is_not_a_replacement(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Archived as 2026-11-08.md."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_five_digit_reference_does_not_satisfy_the_rule(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-00021."))
+        assert NO_REPLACEMENT in result["errors"]
+
+    def test_self_reference_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0001."))
+        assert any("points at this ADR itself" in e for e in result["errors"])
+
+    def test_missing_replacement_is_rejected(self, tmp_path: Path) -> None:
+        result = check(tmp_path, superseded_text("Superseded by ADR-0099."))
+        assert any("replacement ADR-0099 does not exist" in e for e in result["errors"])
 
     @pytest.mark.parametrize(
         "reference",
         [
             "Superseded by ADR-0002.",
             "Superseded by ADR 0002.",
+            "Superseded by adr-0002.",
             "Superseded by 0002-next.md.",
-            "Superseded in #12.",
         ],
     )
     def test_replacement_reference_forms_are_accepted(
         self, tmp_path: Path, reference: str
     ) -> None:
-        text = VALID.replace("status: accepted", "status: superseded").replace(
-            "Reconsider when the demo grows a second consumer.", reference
-        )
-        result = check(tmp_path, text)
+        write(tmp_path, name="0002-next.md")
+        result = check(tmp_path, superseded_text(reference))
         assert result["errors"] == []
 
 

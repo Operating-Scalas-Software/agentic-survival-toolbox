@@ -74,7 +74,9 @@ Use the template below. Non-negotiable parts:
 ### 5. Amend or supersede
 
 - A different decision ⇒ a **new ADR**; set the old one's `status` to
-  `superseded` and point to the replacement.
+  `superseded` and point to the replacement as `ADR-NNNN` or the replacement
+  filename (`NNNN-*.md`). The checker requires another record that exists and is
+  not the ADR itself; an issue number is not a replacement reference.
 - A correction or extension of an accepted ADR ⇒ add `## Amendment (YYYY-MM-DD)`
   at the end: what changed, why, what still holds. Leave the original text intact.
 - Never rewrite the rationale of a decided ADR; the history is the value.
@@ -95,7 +97,8 @@ npx prettier --check docs/adr/NNNN-*.md
 The checker fails on a missing or malformed frontmatter, an unknown `status`,
 a non-ISO `date`, an empty `decision-makers`, a missing section, an empty
 `Confirmation`, a broken relative link, a duplicate number, or a `superseded`
-status with no replacement referenced. It warns about a question-style H1, a
+status whose `ADR-NNNN` / `NNNN-*.md` reference is absent, names this ADR, or
+names a record that does not exist. It warns about a question-style H1, a
 Consequences section without a Bad entry, an option with no Pros and Cons
 subsection, and a driver that no consequence mentions.
 
