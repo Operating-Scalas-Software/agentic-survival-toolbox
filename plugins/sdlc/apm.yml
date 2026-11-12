@@ -1,5 +1,5 @@
 name: sdlc
-version: 0.1.2
+version: 0.1.3
 description: >-
   SDLC agent skills: pull-request review follow-up, Architecture Decision Record
   authoring and validation, and agent-skill self-evaluation.
