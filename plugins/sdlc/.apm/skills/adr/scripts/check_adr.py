@@ -20,6 +20,7 @@ import re
 import sys
 from collections.abc import Iterator
 from datetime import date, datetime
+from os.path import normpath
 from pathlib import Path
 from typing import NoReturn
 
@@ -40,6 +41,29 @@ FILENAME = re.compile(r"^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# A fenced code block opens with three or more backticks or tildes and closes
+# with a run of the same character at least as long, on a line with nothing
+# else. Fences are matched at any indent here: an indented fence belongs to a
+# list item, and the indented-code test below runs first.
+FENCE = re.compile(r"^\s*(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
+# An indented code block is a run of lines indented four spaces or a tab. It
+# cannot interrupt a paragraph (so it only starts after a blank line) and does
+# not apply inside a list item, where the same indent is item content.
+INDENTED = re.compile(r"^(?: {4}|\t)")
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+# An inline code span opens and closes with runs of exactly the same number of
+# backticks and may wrap a line. A link inside one is literal text, and an
+# amendment must be able to quote a decided record verbatim.
+CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(?:(?!\1).)+?\1(?!`)", re.DOTALL)
+# A quote of a link whose target a later decision moved or removed records that
+# target's fate inside the amendment: `- Moved: <old> -> <new>` or
+# `- Removed: <old>`. The original link then stays in place and stops failing.
+HISTORICAL_FATE = re.compile(
+    r"^\s*(?:[-*]|\d+[.)])\s+(?P<fate>moved|renamed|deleted|removed)\s*:\s*"
+    r"`?(?P<old>[^`\s]+)`?(?:\s*(?:->|\u2192|to)\s*`?(?P<new>[^`\s]+)`?)?",
+    re.IGNORECASE,
+)
+MOVED_FATES = {"moved", "renamed"}
 # A superseded ADR names its replacement as `ADR-0002` or as a `0002-*.md`
 # filename. A bare four-digit run does not count - the mandatory ISO `date:`
 # always supplies one - and neither does `#12`: the skill requires an issue
@@ -113,15 +137,81 @@ def split_frontmatter(text: str) -> tuple[dict, str, str | None]:
     return {}, text, "missing closing '---'"
 
 
-def iter_unfenced(body: str) -> Iterator[str]:
-    """Yield the body lines that are outside fenced code blocks."""
-    in_fence = False
+def mask_code(body: str) -> list[str | None]:
+    """Return body lines with each line inside a code block replaced by None.
+
+    The line count is preserved, so blanking a block cannot fuse the prose on
+    either side of it into a link that nobody wrote.
+    """
+    masked: list[str | None] = []
+    fence: str | None = None
+    indented = False
+    previous_blank = True
+    previous_is_list = False
     for line in body.splitlines():
-        if line.strip().startswith(("```", "~~~")):
-            in_fence = not in_fence
+        if fence is not None:
+            masked.append(None)
+            closer = FENCE.match(line)
+            if (
+                closer
+                and closer["marker"][0] == fence[0]
+                and len(closer["marker"]) >= len(fence)
+                and not closer["info"].strip()
+            ):
+                fence = None
             continue
-        if not in_fence:
+        if not line.strip():
+            masked.append(None if indented else "")
+            previous_blank = True
+            continue
+        if INDENTED.match(line) and (
+            indented or (previous_blank and not previous_is_list)
+        ):
+            indented = True
+            masked.append(None)
+            previous_blank = False
+            continue
+        indented = False
+        opener = FENCE.match(line)
+        if opener:
+            fence = opener["marker"]
+            masked.append(None)
+            previous_blank = False
+            previous_is_list = False
+            continue
+        masked.append(line)
+        previous_blank = False
+        previous_is_list = LIST_ITEM.match(line) is not None
+    return masked
+
+
+def iter_unfenced(body: str) -> Iterator[str]:
+    """Yield the body lines that are outside a code block."""
+    for line in mask_code(body):
+        if line is not None:
             yield line
+
+
+def prose(body: str) -> str:
+    """Body text as it renders: code blocks and code spans blanked out."""
+    return CODE_SPAN.sub(" ", "\n".join(line or "" for line in mask_code(body)))
+
+
+def find_links(body: str) -> Iterator[str]:
+    """Yield the destination of every link that renders as a link.
+
+    A paragraph break ends a link, so the search runs block by block: pasting
+    a fence between two fragments must not resolve them into a new link.
+    """
+    block: list[str] = []
+    for line in prose(body).splitlines():
+        if line.strip():
+            block.append(line)
+        elif block:
+            yield from LINK.findall("\n".join(block))
+            block = []
+    if block:
+        yield from LINK.findall("\n".join(block))
 
 
 def sections(body: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
@@ -187,6 +277,57 @@ def replacement_errors(path: Path, number: int | None, body: str) -> list[str]:
             errors.append(
                 f"status is superseded but replacement ADR-{reference:04d} does not exist"
             )
+    return errors
+
+
+def historical_fates(body: str) -> dict[str, str | None]:
+    """Map each path an amendment says moved or was removed to its new path.
+
+    Only `## Amendment` sections count: a decided record's original text stays
+    as written, so the record of what happened to a target belongs in the
+    amendment added later. Keys are normalized so `./a.md` matches `a.md`.
+    """
+    _, texts = sections(body)
+    fates: dict[str, str | None] = {}
+    for heading, text in texts.items():
+        if not heading.startswith("amendment"):
+            continue
+        for line in text.splitlines():
+            match = HISTORICAL_FATE.match(line)
+            if not match:
+                continue
+            moved = match["fate"].lower() in MOVED_FATES
+            fates[normpath(match["old"])] = match["new"] if moved else None
+    return fates
+
+
+def link_errors(path: Path, body: str) -> list[str]:
+    """Resolve every relative link that renders as a link.
+
+    A link whose target no longer exists is an error unless an amendment
+    records what happened to that target; deleting the link from a decided
+    record would rewrite its history.
+    """
+    errors: list[str] = []
+    fates = historical_fates(body)
+    for old, replacement in fates.items():
+        if not replacement:
+            continue
+        target = replacement.split("#", 1)[0]
+        if not (path.parent / target).exists():
+            errors.append(
+                f"amendment records {old} -> {replacement}, "
+                f"but {replacement} does not exist"
+            )
+    for target in find_links(body):
+        if target.startswith(("#", "http://", "https://", "mailto:")):
+            continue
+        relative = target.split("#", 1)[0]
+        if (path.parent / relative).resolve().exists():
+            continue
+        if normpath(relative) in fates:
+            continue
+        errors.append(f"broken relative link: {target}")
     return errors
 
 
@@ -296,12 +437,7 @@ def check_file(path: Path, numbers: dict[int, list[str]]) -> dict:
     if normalize(str(status)) == "superseded":
         errors.extend(replacement_errors(path, number, body))
 
-    for target in LINK.findall(body):
-        if target.startswith(("#", "http://", "https://", "mailto:")):
-            continue
-        resolved = (path.parent / target.split("#", 1)[0]).resolve()
-        if not resolved.exists():
-            errors.append(f"broken relative link: {target}")
+    errors.extend(link_errors(path, body))
 
     if number is not None and number > 1 and (number - 1) not in numbers and not any(
         candidate < number for candidate in numbers

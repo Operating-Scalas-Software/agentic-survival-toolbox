@@ -94,6 +94,27 @@ def superseded_text(reference: str) -> str:
     )
 
 
+# The record from issue #13: the decided body links a file that a later
+# decision deleted, and an amendment quotes the original line.
+FROZEN_LINK = "config/environments.json"
+DECIDED = VALID.replace(
+    "- Reconsider when the demo grows a second consumer.",
+    "- Account and region values stay in\n"
+    f"  [`{FROZEN_LINK}`]({FROZEN_LINK}).\n"
+    "- Reconsider when the demo grows a second consumer.",
+)
+AMENDMENT = """
+## Amendment (2026-11-12)
+
+Account and region values moved to `lib/stages.ts`.
+
+```text
+- Account and region values stay in
+  [`config/environments.json`](config/environments.json).
+```
+"""
+
+
 def run(monkeypatch: pytest.MonkeyPatch, *args: str) -> int:
     monkeypatch.setattr(sys, "argv", ["check_adr.py", *args])
     return check_adr.main()
@@ -334,6 +355,143 @@ class TestLinks:
         )
         result = check(tmp_path, text)
         assert result["errors"] == []
+
+    def test_fenced_historical_link_is_not_checked(self, tmp_path: Path) -> None:
+        # A later decision may delete a file a decided ADR links to; §5 says to
+        # leave the decided text intact, so quoting it must not fail the check.
+        text = VALID.replace(
+            "Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002.\n\n```text\nSee [the guide](guide.md).\n```",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_inline_code_link_is_not_checked(self, tmp_path: Path) -> None:
+        text = VALID.replace(
+            "Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002. Original text: `See [the guide](guide.md).`",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_prose_link_next_to_a_fence_is_still_checked(self, tmp_path: Path) -> None:
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "```text\n[old](gone.md)\n```\n\nSee [the guide](guide.md).",
+        )
+        result = check(tmp_path, text)
+        assert any("broken relative link: guide.md" in e for e in result["errors"])
+
+    def test_indented_historical_link_is_not_checked(self, tmp_path: Path) -> None:
+        # Quoting history with an indented block is as valid as a fence.
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002.\n\n    See [the guide](guide.md).",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_indented_list_continuation_still_checks_its_links(
+        self, tmp_path: Path
+    ) -> None:
+        # A four-space indent under a bullet is item content, not code.
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "- See [the guide](guide.md):\n\n    The guide is short.",
+        )
+        result = check(tmp_path, text)
+        assert any("broken relative link: guide.md" in e for e in result["errors"])
+
+    def test_multiline_inline_code_link_is_not_checked(self, tmp_path: Path) -> None:
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002. Original: `See [the guide](guide.md)\nin full.`",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_code_span_with_embedded_backticks_is_not_checked(
+        self, tmp_path: Path
+    ) -> None:
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002. Original: ``a `tick`, [the guide](guide.md)``",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_a_fence_cannot_join_two_prose_fragments_into_a_link(
+        self, tmp_path: Path
+    ) -> None:
+        # The blank line a fence leaves behind ends the paragraph, so the two
+        # fragments never render as one link.
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "See [the guide\n```text\n```\n](guide.md).",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_frozen_link_to_a_deleted_target_still_fails(self, tmp_path: Path) -> None:
+        # Issue #13: quoting the original line fixes the double report but not
+        # the frozen link, so the record needs a recorded fate as well.
+        result = check(tmp_path, DECIDED + AMENDMENT)
+        assert result["errors"] == [f"broken relative link: {FROZEN_LINK}"]
+
+    def test_amendment_recording_where_the_target_moved_passes(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "stages.ts").write_text("export {}\n", encoding="utf-8")
+        fate = f"\n- Moved: {FROZEN_LINK} -> lib/stages.ts\n"
+        result = check(tmp_path, DECIDED + AMENDMENT + fate)
+        assert result["errors"] == []
+
+    def test_amendment_recording_a_removal_passes(self, tmp_path: Path) -> None:
+        fate = f"\n- Removed: {FROZEN_LINK}\n"
+        result = check(tmp_path, DECIDED + AMENDMENT + fate)
+        assert result["errors"] == []
+
+    def test_recorded_fate_must_name_an_existing_target(self, tmp_path: Path) -> None:
+        fate = f"\n- Renamed: {FROZEN_LINK} \u2192 lib/gone.ts\n"
+        result = check(tmp_path, DECIDED + AMENDMENT + fate)
+        assert any("does not exist" in e and "lib/gone.ts" in e for e in result["errors"])
+
+    def test_recorded_fate_outside_an_amendment_does_not_apply(
+        self, tmp_path: Path
+    ) -> None:
+        # Only an amendment can explain a stale link; the decided text is frozen.
+        text = DECIDED.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            f"- Moved: {FROZEN_LINK} -> lib/stages.ts",
+        )
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "stages.ts").write_text("export {}\n", encoding="utf-8")
+        result = check(tmp_path, text)
+        assert result["errors"] == [f"broken relative link: {FROZEN_LINK}"]
+
+    def test_recorded_fate_only_covers_the_target_it_names(self, tmp_path: Path) -> None:
+        fate = f"\n- Removed: {FROZEN_LINK}\n"
+        result = check(tmp_path, DECIDED + AMENDMENT + fate + "\nAlso see [gs](gone.md).\n")
+        assert result["errors"] == ["broken relative link: gone.md"]
+
+
+class TestCodeMask:
+    def test_masking_preserves_the_line_count(self) -> None:
+        body = "Sentence.\n\n```text\n[a](b.md)\n```\n\nAfter.\n"
+        assert len(check_adr.prose(body).splitlines()) == len(body.splitlines())
+
+    def test_mask_blanks_fenced_and_indented_lines(self) -> None:
+        body = "Prose.\n\n```\nfenced\n```\n\n    indented\n"
+        masked = check_adr.mask_code(body)
+        assert masked[0] == "Prose."
+        assert masked[2] is None
+        assert masked[6] is None
+
+    def test_heading_inside_an_indented_block_is_not_a_section(self) -> None:
+        body = "Prose.\n\n    ## Decision Drivers\n"
+        headings, _ = check_adr.sections(body)
+        assert headings == []
 
 
 class TestNumbers:
