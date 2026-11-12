@@ -84,6 +84,11 @@ Use the template below. Non-negotiable parts:
 - A correction or extension of an accepted ADR ⇒ add `## Amendment (YYYY-MM-DD)`
   at the end: what changed, why, what still holds. Leave the original text intact.
 - Never rewrite the rationale of a decided ADR; the history is the value.
+- When a later decision deletes or moves a file that a decided ADR links to,
+  keep the link and record the target's fate in the amendment:
+  `- Moved: <old path> -> <new path>` (or `- Renamed:`) when it moved, and
+  `- Removed: <old path>` when it is gone. Deleting the link instead rewrites
+  history, and quoting it in a fence only stops it being reported twice.
 
 ### 6. Cross-link
 
@@ -100,16 +105,18 @@ npx prettier --check docs/adr/NNNN-*.md
 
 The checker fails on a missing or malformed frontmatter, an unknown `status`,
 a non-ISO `date`, an empty `decision-makers`, a missing section, an empty
-`Confirmation`, a broken relative link in prose, a duplicate number, or a
-`superseded` status whose supersession sentence names no replacement, names this
-ADR, or names no record that exists. It warns about a question-style H1, a
-Consequences section without a Bad entry, an option with no Pros and Cons
-subsection, and a driver that no consequence mentions.
+`Confirmation`, a broken relative link, a duplicate number, or a `superseded`
+status whose supersession sentence names no replacement, names this ADR, or
+names no record that exists. It resolves only links that render as links: a
+target inside a fence, an indented block or an inline code span is quoted text.
+A rendered link whose target is gone passes only when an `## Amendment` records
+the target's fate (`- Moved: <old> -> <new>`, `- Renamed: <old> -> <new>` or
+`- Removed: <old>`), and a recorded new path must itself exist. It warns about a
+question-style H1, a Consequences section without a Bad entry, an option with no
+Pros and Cons subsection, and a driver that no consequence mentions.
 
-Links inside a fenced code block or inline code are not resolved: an amendment
-may quote the original text of a decided record even when that link's target was
-deleted. Then read the result yourself: is the decision actually stated in the
-title, and could a reviewer disagree with the reasoning?
+Then read the result yourself: is the decision actually stated in the title, and
+could a reviewer disagree with the reasoning?
 
 ## Template
 
@@ -200,10 +207,11 @@ The decision has these parts:
   make it reviewable, so write them first if the Good ones come too easily.
 - Keep the file short (roughly 60-120 lines). Implementation detail belongs in
   the PR that follows.
-- Links inside a fenced code block or inline code are not validated. When a
-  later decision deletes a file that an accepted ADR links to, quote the
-  original line verbatim in a fence and record the removal in the amendment;
-  never delete the link from the decided text.
+- Links inside a fenced code block, an indented code block or inline code are
+  not validated: a link inside code is not a link, and an amendment may quote a
+  decided record verbatim. Quoting the original line stops it being reported
+  twice, but the frozen link itself still needs a recorded fate in the
+  amendment, or the check keeps failing.
 - The "driver has no matching consequence" warning is a keyword heuristic with a
   fixed stopword list: a driver rephrased with different words can warn on an
   otherwise valid ADR. Treat it as a nudge, not a failure; make the driver's key
