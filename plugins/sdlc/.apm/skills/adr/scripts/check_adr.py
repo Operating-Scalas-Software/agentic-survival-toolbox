@@ -40,6 +40,8 @@ FILENAME = re.compile(r"^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# Inline code spans never contribute links: an amendment may quote history.
+INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 # A superseded ADR names its replacement as `ADR-0002` or as a `0002-*.md`
 # filename. A bare four-digit run does not count - the mandatory ISO `date:`
 # always supplies one - and neither does `#12`: the skill requires an issue
@@ -122,6 +124,11 @@ def iter_unfenced(body: str) -> Iterator[str]:
             continue
         if not in_fence:
             yield line
+
+
+def prose(body: str) -> str:
+    """Body text the author reads: fenced blocks and inline code removed."""
+    return INLINE_CODE.sub("", "\n".join(iter_unfenced(body)))
 
 
 def sections(body: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
@@ -296,7 +303,7 @@ def check_file(path: Path, numbers: dict[int, list[str]]) -> dict:
     if normalize(str(status)) == "superseded":
         errors.extend(replacement_errors(path, number, body))
 
-    for target in LINK.findall(body):
+    for target in LINK.findall(prose(body)):
         if target.startswith(("#", "http://", "https://", "mailto:")):
             continue
         resolved = (path.parent / target.split("#", 1)[0]).resolve()

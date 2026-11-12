@@ -100,14 +100,16 @@ npx prettier --check docs/adr/NNNN-*.md
 
 The checker fails on a missing or malformed frontmatter, an unknown `status`,
 a non-ISO `date`, an empty `decision-makers`, a missing section, an empty
-`Confirmation`, a broken relative link, a duplicate number, or a `superseded`
-status whose supersession sentence names no replacement, names this ADR, or
-names no record that exists. It warns about a question-style H1, a
+`Confirmation`, a broken relative link in prose, a duplicate number, or a
+`superseded` status whose supersession sentence names no replacement, names this
+ADR, or names no record that exists. It warns about a question-style H1, a
 Consequences section without a Bad entry, an option with no Pros and Cons
 subsection, and a driver that no consequence mentions.
 
-Then read the result yourself: is the decision actually stated in the title, and
-could a reviewer disagree with the reasoning?
+Links inside a fenced code block or inline code are not resolved: an amendment
+may quote the original text of a decided record even when that link's target was
+deleted. Then read the result yourself: is the decision actually stated in the
+title, and could a reviewer disagree with the reasoning?
 
 ## Template
 
@@ -198,6 +200,10 @@ The decision has these parts:
   make it reviewable, so write them first if the Good ones come too easily.
 - Keep the file short (roughly 60-120 lines). Implementation detail belongs in
   the PR that follows.
+- Links inside a fenced code block or inline code are not validated. When a
+  later decision deletes a file that an accepted ADR links to, quote the
+  original line verbatim in a fence and record the removal in the amendment;
+  never delete the link from the decided text.
 - The "driver has no matching consequence" warning is a keyword heuristic with a
   fixed stopword list: a driver rephrased with different words can warn on an
   otherwise valid ADR. Treat it as a nudge, not a failure; make the driver's key

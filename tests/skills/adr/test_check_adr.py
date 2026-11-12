@@ -335,6 +335,32 @@ class TestLinks:
         result = check(tmp_path, text)
         assert result["errors"] == []
 
+    def test_fenced_historical_link_is_not_checked(self, tmp_path: Path) -> None:
+        # A later decision may delete a file a decided ADR links to; §5 says to
+        # leave the decided text intact, so quoting it must not fail the check.
+        text = VALID.replace(
+            "Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002.\n\n```text\nSee [the guide](guide.md).\n```",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_inline_code_link_is_not_checked(self, tmp_path: Path) -> None:
+        text = VALID.replace(
+            "Reconsider when the demo grows a second consumer.",
+            "Amended by ADR-0002. Original text: `See [the guide](guide.md).`",
+        )
+        result = check(tmp_path, text)
+        assert result["errors"] == []
+
+    def test_prose_link_next_to_a_fence_is_still_checked(self, tmp_path: Path) -> None:
+        text = VALID.replace(
+            "- Reconsider when the demo grows a second consumer.",
+            "```text\n[old](gone.md)\n```\n\nSee [the guide](guide.md).",
+        )
+        result = check(tmp_path, text)
+        assert any("broken relative link: guide.md" in e for e in result["errors"])
+
 
 class TestNumbers:
     def test_numbering_warns_when_it_does_not_start_at_0001(self, tmp_path: Path) -> None:
