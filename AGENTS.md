@@ -10,6 +10,8 @@ plugins/<pkg>/                 # one package per directory
   apm.yml                      # package manifest
   plugin.json                  # Copilot Agent Plugin manifest
   .apm/skills/<name>/          # skills (SKILL.md + scripts/ + references/)
+  .apm/agents/<name>.agent.md  # agents (one persona per file)
+  .apm/hooks/                  # hooks (JSON plus the scripts they run)
 tests/                         # unit/integration tests (never packaged)
 docs/*.md                      # process docs
 docs/adr/NNNN-*.md             # Architecture Decision Records
@@ -27,8 +29,11 @@ scripts/runner_image_watch.py  # reports an outdated Ubuntu runner label
   organization with a placeholder such as `<owner>`.
 - **License.** New files are Apache-2.0. Do not add a copyright header naming an
   organization or person.
-- **One source of truth.** Skills live in `plugins/<pkg>/.apm/skills/`; the
-  marketplace JSONs are generated and must not be hand-edited.
+- **One source of truth.** Primitives live in `plugins/<pkg>/.apm/` (skills,
+  agents, hooks); the marketplace JSONs are generated and must not be hand-edited.
+- **Hooks are code.** Keep hook scripts beside their JSON, resolve their own
+  directory, and make the failure path deliberate: a `preToolUse` command that
+  exits non-zero fails closed and blocks every tool call.
 - **Versioning.** Lockstep: bump the root `apm.yml` `version` and every package
   `version` together, per CONTRIBUTING.md.
 - **Tests.** Python/Node scripts must have tests under `tests/`; they run in CI
@@ -36,9 +41,10 @@ scripts/runner_image_watch.py  # reports an outdated Ubuntu runner label
 
 ## Contributing
 
-Follow [CONTRIBUTING.md](CONTRIBUTING.md): branch from `main`, add the skill under
-`plugins/<pkg>/.apm/skills/<name>/`, add tests under `tests/`, run the checks,
-regenerate the marketplace JSONs, and open a PR against `main`.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md): branch from `main`, add the primitive
+under `plugins/<pkg>/.apm/` (`skills/`, `agents/`, or `hooks/`), add tests under
+`tests/`, run the checks, regenerate the marketplace JSONs, and open a PR against
+`main`.
 
 ## Release process
 

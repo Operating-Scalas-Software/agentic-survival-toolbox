@@ -15,6 +15,8 @@ plugins/<pkg>/                 # one package per directory
   plugin.json                  # Copilot plugin manifest
   README.md                    # consumer-facing package docs
   .apm/skills/<name>/          # skills: SKILL.md + scripts/, references/, assets/
+  .apm/agents/<name>.agent.md  # agents: one persona per file
+  .apm/hooks/                  # hooks: JSON plus the scripts they run
 tests/                         # unit/integration tests (never packaged)
 docs/*.md                      # process docs
 docs/adr/NNNN-*.md             # Architecture Decision Records
@@ -24,7 +26,11 @@ docs/adr/NNNN-*.md             # Architecture Decision Records
 
 - Reusable **skills** — a `SKILL.md` plus bundled `scripts/`, `references/`,
   `assets/`, or `examples/`.
-- **Copilot plugins** that group related skills.
+- **Agents** — one `.apm/agents/<name>.agent.md` persona per file, with a
+  trigger-oriented description and explicit boundaries.
+- **Hooks** — one `.apm/hooks/<name>.json` per lifecycle policy, plus the
+  scripts it runs.
+- **Copilot plugins** that group related primitives.
 
 ## What we do not accept
 
@@ -48,9 +54,28 @@ docs/adr/NNNN-*.md             # Architecture Decision Records
 ## Adding a plugin
 
 1. Create `plugins/<pkg>/` with `apm.yml`, `plugin.json`, `README.md`, and its
-   skills under `.apm/skills/`.
+   primitives under `.apm/` (`skills/`, `agents/`, `hooks/`).
 2. Keep `plugin.json` `version` and `plugins/<pkg>/apm.yml` `version` equal.
 3. Register the package in the root `apm.yml` `marketplace.packages` list.
+
+## Adding an agent
+
+1. Add `plugins/<pkg>/.apm/agents/<name>.agent.md` with a `description` that
+   starts "Use when …" so the agent picker and subagent delegation can find it.
+2. Keep the body focused on one role: what it does, what it must not do, and the
+   shape of its output.
+3. Optional frontmatter (tools, model, argument hints) does not translate to
+   every harness; expect install warnings and keep essential behavior in the body.
+
+## Adding a hook
+
+1. Add `plugins/<pkg>/.apm/hooks/<name>.json`. Event names are renamed per
+   harness (for example `PreToolUse` becomes `preToolUse` for Copilot).
+2. Put the scripts the hook runs beside it and reference them with paths
+   relative to the hook file, as APM documents.
+3. Hooks gate tools in every consuming repository, so keep them small and
+   auditable, and make failure behavior deliberate: a `preToolUse` command that
+   exits non-zero fails closed and denies every tool call.
 
 ## Tests
 
@@ -58,9 +83,10 @@ docs/adr/NNNN-*.md             # Architecture Decision Records
 - Tests live under top-level `tests/`, outside the packaged `.apm/` tree, so
   they run in CI and are excluded from releases by construction.
 - Mirror the source path: `scripts/runner_image_watch.py` is covered by
-  `tests/scripts/test_runner_image_watch.py`, and
-  `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py` by
-  `tests/skills/adr/test_check_adr.py`.
+  `tests/scripts/test_runner_image_watch.py`, `plugins/sdlc/.apm/skills/adr/scripts/check_adr.py`
+  by `tests/skills/adr/test_check_adr.py`, and
+  `plugins/aws/.apm/hooks/scripts/deny_aws_mutations.py` by
+  `tests/hooks/aws/test_deny_aws_mutations.py`.
 - Skill scripts import `pyyaml`, which the command below installs with the
   versions pinned in `.github/workflows/validate.yml`.
 - Python: `tests/**/test_*.py` and `tests/**/*_test.py`, run with `pytest`.
@@ -89,7 +115,8 @@ marketplace JSONs.
 
 ## Versioning
 
-Semantic versioning, with the skill **description as the API**:
+Semantic versioning, with a primitive's `description` (its activation contract)
+as the API:
 
 - **Patch** — a body edit that does not change the activation contract.
 - **Minor** — a new asset, skill, or reference; existing consumers unaffected.

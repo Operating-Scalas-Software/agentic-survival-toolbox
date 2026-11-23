@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "aws",
+  "description": "AWS Well-Architected review agent and a preToolUse guard that refuses state-changing AWS commands.",
+  "version": "0.2.0",
+  "author": { "name": "agentic-survival-toolbox" },
+  "license": "Apache-2.0",
+  "keywords": ["aws", "well-architected", "architecture-review", "cdk", "hooks", "guard"]
+}
