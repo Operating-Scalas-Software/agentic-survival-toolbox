@@ -1,0 +1,6 @@
+name: aws
+version: 0.2.0
+description: AWS Well-Architected review agent and a preToolUse guard that refuses state-changing AWS commands.
+author: agentic-survival-toolbox
+license: Apache-2.0
+includes: auto
